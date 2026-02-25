@@ -14,7 +14,7 @@ pnpm add @chat-adapter/slack
 
 ## Single-workspace mode
 
-For bots deployed to a single Slack workspace:
+For bots deployed to a single Slack workspace. The adapter auto-detects `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET` from environment variables:
 
 ```typescript title="lib/bot.ts" lineNumbers
 import { Chat } from "chat";
@@ -23,10 +23,7 @@ import { createSlackAdapter } from "@chat-adapter/slack";
 const bot = new Chat({
   userName: "mybot",
   adapters: {
-    slack: createSlackAdapter({
-      botToken: process.env.SLACK_BOT_TOKEN!,
-      signingSecret: process.env.SLACK_SIGNING_SECRET!,
-    }),
+    slack: createSlackAdapter(),
   },
 });
 
@@ -39,21 +36,21 @@ bot.onNewMention(async (thread, message) => {
 
 For apps installed across multiple Slack workspaces via OAuth, omit `botToken` and provide OAuth credentials instead. The adapter resolves tokens dynamically from your state adapter using the `team_id` from incoming webhooks.
 
+When you pass any auth-related config (like `clientId`), the adapter won't fall back to env vars for other auth fields, preventing accidental mixing of auth modes.
+
 ```typescript title="lib/bot.ts" lineNumbers
 import { createSlackAdapter } from "@chat-adapter/slack";
 import { createRedisState } from "@chat-adapter/state-redis";
 
 const slackAdapter = createSlackAdapter({
-  signingSecret: process.env.SLACK_SIGNING_SECRET!,
   clientId: process.env.SLACK_CLIENT_ID!,
   clientSecret: process.env.SLACK_CLIENT_SECRET!,
-  encryptionKey: process.env.SLACK_ENCRYPTION_KEY,
 });
 
 const bot = new Chat({
   userName: "mybot",
   adapters: { slack: slackAdapter },
-  state: createRedisState({ url: process.env.REDIS_URL! }),
+  state: createRedisState(),
 });
 ```
 
@@ -104,80 +101,95 @@ When `encryptionKey` is set, `setInstallation()` encrypts the token before stori
 
 ## Slack app setup
 
-### 1. Create a Slack app
+### 1. Create a Slack app from manifest
 
 1. Go to [api.slack.com/apps](https://api.slack.com/apps)
-2. Click **Create New App** then **From scratch**
-3. Enter app name and select workspace
-4. Click **Create App**
+2. Click **Create New App** then **From an app manifest**
+3. Select your workspace and paste the following manifest:
 
-### 2. Configure bot token scopes
+```yaml title="slack-manifest.yml"
+display_information:
+  name: My Bot
+  description: A bot built with chat-sdk
 
-Go to **OAuth & Permissions** and add these **Bot Token Scopes**:
+features:
+  bot_user:
+    display_name: My Bot
+    always_online: true
 
-| Scope | Description |
-|-------|-------------|
-| `app_mentions:read` | Receive @mention events |
-| `channels:history` | Read messages in public channels |
-| `channels:read` | View basic channel info |
-| `chat:write` | Send messages |
-| `groups:history` | Read messages in private channels |
-| `groups:read` | View basic private channel info |
-| `im:history` | Read direct messages |
-| `im:read` | View basic DM info |
-| `reactions:read` | View emoji reactions |
-| `reactions:write` | Add/remove emoji reactions |
-| `users:read` | View user info (for display names) |
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read
+      - channels:history
+      - channels:read
+      - chat:write
+      - groups:history
+      - groups:read
+      - im:history
+      - im:read
+      - mpim:history
+      - mpim:read
+      - reactions:read
+      - reactions:write
+      - users:read
 
-### 3. Install app to workspace
+settings:
+  event_subscriptions:
+    request_url: https://your-domain.com/api/webhooks/slack
+    bot_events:
+      - app_mention
+      - message.channels
+      - message.groups
+      - message.im
+      - message.mpim
+      - assistant_thread_started
+      - assistant_thread_context_changed
+  interactivity:
+    is_enabled: true
+    request_url: https://your-domain.com/api/webhooks/slack
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
+```
 
-**Single workspace:**
+4. Replace `https://your-domain.com/api/webhooks/slack` with your deployed webhook URL
+5. Click **Create**
 
-1. Go to **OAuth & Permissions**
-2. Click **Install to Workspace** and authorize
-3. Copy the **Bot User OAuth Token** (`xoxb-...`) as `SLACK_BOT_TOKEN`
+### 2. Get credentials
 
-**Multi-workspace:**
+After creating the app, go to **Basic Information** → **App Credentials** and copy:
 
-Enable **Manage Distribution** under **Basic Information**, then set up an OAuth redirect URL pointing to your callback route. The adapter handles the token exchange via `handleOAuthCallback()`.
+- **Signing Secret** as `SLACK_SIGNING_SECRET`
+- **Client ID** as `SLACK_CLIENT_ID` (multi-workspace only)
+- **Client Secret** as `SLACK_CLIENT_SECRET` (multi-workspace only)
 
-### 4. Get signing secret
+**Single workspace:** Go to **OAuth & Permissions**, click **Install to Workspace**, and copy the **Bot User OAuth Token** (`xoxb-...`) as `SLACK_BOT_TOKEN`.
 
-1. Go to **Basic Information**
-2. Under **App Credentials**, copy:
-   - **Signing Secret** as `SLACK_SIGNING_SECRET`
-   - **Client ID** as `SLACK_CLIENT_ID` (multi-workspace only)
-   - **Client Secret** as `SLACK_CLIENT_SECRET` (multi-workspace only)
+**Multi-workspace:** Enable **Manage Distribution** under **Basic Information** and set up an OAuth redirect URL pointing to your callback route.
 
-### 5. Configure event subscriptions
+### 3. Configure slash commands (optional)
 
-1. Go to **Event Subscriptions**
-2. Toggle **Enable Events** to On
-3. Set **Request URL** to `https://your-domain.com/api/webhooks/slack`
-4. Under **Subscribe to bot events**, add:
-   - `app_mention` — when someone @mentions your bot
-   - `message.channels` — messages in public channels
-   - `message.groups` — messages in private channels
-   - `message.im` — direct messages
-5. Click **Save Changes**
-
-### 6. Enable interactivity (optional)
-
-For buttons, modals, and other interactive components:
-
-1. Go to **Interactivity & Shortcuts**
-2. Toggle **Interactivity** to On
-3. Set **Request URL** to `https://your-domain.com/api/webhooks/slack`
+1. Go to **Slash Commands** in your app settings
+2. Click **Create New Command**
+3. Set **Command** (e.g., `/feedback`)
+4. Set **Request URL** to `https://your-domain.com/api/webhooks/slack`
+5. Add a description and click **Save**
 
 ## Configuration
 
+All options are auto-detected from environment variables when not provided. You can call `createSlackAdapter()` with no arguments if the env vars are set.
+
 | Option | Required | Description |
 |--------|----------|-------------|
-| `botToken` | No | Bot token (`xoxb-...`). Required for single-workspace, omit for multi-workspace |
-| `signingSecret` | Yes | Signing secret for webhook verification |
-| `clientId` | No | App client ID (required for multi-workspace OAuth) |
-| `clientSecret` | No | App client secret (required for multi-workspace OAuth) |
-| `encryptionKey` | No | Base64-encoded 32-byte AES-256-GCM key for encrypting stored tokens |
+| `botToken` | No | Bot token (`xoxb-...`). Auto-detected from `SLACK_BOT_TOKEN` |
+| `signingSecret` | No* | Signing secret for webhook verification. Auto-detected from `SLACK_SIGNING_SECRET` |
+| `clientId` | No | App client ID for multi-workspace OAuth. Auto-detected from `SLACK_CLIENT_ID` |
+| `clientSecret` | No | App client secret for multi-workspace OAuth. Auto-detected from `SLACK_CLIENT_SECRET` |
+| `encryptionKey` | No | AES-256-GCM key for encrypting stored tokens. Auto-detected from `SLACK_ENCRYPTION_KEY` |
+| `logger` | No | Logger instance (defaults to `ConsoleLogger("info")`) |
+
+*`signingSecret` is required — either via config or `SLACK_SIGNING_SECRET` env var.
 
 ## Environment variables
 
@@ -197,12 +209,78 @@ SLACK_ENCRYPTION_KEY=...             # Optional, for token encryption
 | Reactions (add/remove) | Yes |
 | Cards (Block Kit) | Yes |
 | Modals | Yes |
+| Slash commands | Yes |
 | Streaming | Native API |
 | DMs | Yes |
 | Ephemeral messages | Yes (native) |
 | File uploads | Yes |
 | Typing indicator | Yes |
 | Message history | Yes |
+| Assistants API | Yes |
+| App Home tab | Yes |
+
+## Slack Assistants API
+
+The adapter supports Slack's [Assistants API](https://api.slack.com/docs/apps/ai) for building AI-powered assistant experiences. This enables suggested prompts, status indicators, and thread titles in assistant DM threads.
+
+### Event handlers
+
+Register handlers on the `Chat` instance:
+
+```typescript title="lib/bot.ts" lineNumbers
+bot.onAssistantThreadStarted(async (event) => {
+  const slack = bot.getAdapter("slack") as SlackAdapter;
+  await slack.setSuggestedPrompts(event.channelId, event.threadTs, [
+    { title: "Summarize", message: "Summarize this channel" },
+    { title: "Draft", message: "Help me draft a message" },
+  ]);
+});
+
+bot.onAssistantContextChanged(async (event) => {
+  // User navigated to a different channel with the assistant panel open
+});
+```
+
+### Adapter methods
+
+The `SlackAdapter` exposes these methods for the Assistants API:
+
+| Method | Description |
+|--------|-------------|
+| `setSuggestedPrompts(channelId, threadTs, prompts, title?)` | Show prompt suggestions in the thread |
+| `setAssistantStatus(channelId, threadTs, status)` | Show a thinking/status indicator |
+| `setAssistantTitle(channelId, threadTs, title)` | Set the thread title (shown in History) |
+| `publishHomeView(userId, view)` | Publish a Home tab view for a user |
+| `startTyping(threadId, status)` | Show a custom loading status (requires `assistant:write` scope) |
+
+### Required scopes and events
+
+Add these to your Slack app manifest for Assistants API support:
+
+```yaml title="slack-manifest.yml"
+oauth_config:
+  scopes:
+    bot:
+      - assistant:write
+
+settings:
+  event_subscriptions:
+    bot_events:
+      - assistant_thread_started
+      - assistant_thread_context_changed
+```
+
+### Stream with stop blocks
+
+When streaming in an assistant thread, you can attach Block Kit elements to the final message:
+
+```typescript title="lib/bot.ts"
+await thread.stream(textStream, {
+  stopBlocks: [
+    { type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "Retry" }, action_id: "retry" }] },
+  ],
+});
+```
 
 ## Troubleshooting
 

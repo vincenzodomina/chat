@@ -24,7 +24,7 @@ const mockLogger: Logger = {
 function createSlackSignature(
   body: string,
   secret: string,
-  timestamp: number,
+  timestamp: number
 ): string {
   const sigBasestring = `v0:${timestamp}:${body}`;
   return `v0=${createHmac("sha256", secret).update(sigBasestring).digest("hex")}`;
@@ -33,7 +33,7 @@ function createSlackSignature(
 function createWebhookRequest(
   body: string,
   secret: string,
-  options?: { timestampOffset?: number; contentType?: string },
+  options?: { timestampOffset?: number; contentType?: string }
 ): Request {
   const timestamp =
     Math.floor(Date.now() / 1000) + (options?.timestampOffset ?? 0);
@@ -146,13 +146,22 @@ describe("decodeThreadId", () => {
     });
   });
 
+  it("decodes channel-only ID (no threadTs)", () => {
+    const result = adapter.decodeThreadId("slack:C12345");
+    expect(result).toEqual({
+      channel: "C12345",
+      threadTs: "",
+    });
+  });
+
   it("throws on invalid thread ID format", () => {
     expect(() => adapter.decodeThreadId("invalid")).toThrow(ValidationError);
-    expect(() => adapter.decodeThreadId("slack:C12345")).toThrow(
-      ValidationError,
-    );
+    expect(() => adapter.decodeThreadId("slack")).toThrow(ValidationError);
     expect(() => adapter.decodeThreadId("teams:C12345:123")).toThrow(
-      ValidationError,
+      ValidationError
+    );
+    expect(() => adapter.decodeThreadId("slack:A:B:C:D")).toThrow(
+      ValidationError
     );
   });
 });
@@ -894,18 +903,19 @@ function createMockState(): StateAdapter & { cache: Map<string, unknown> } {
     subscribe: vi.fn().mockResolvedValue(undefined),
     unsubscribe: vi.fn().mockResolvedValue(undefined),
     isSubscribed: vi.fn().mockResolvedValue(false),
-    listSubscriptions: vi.fn().mockImplementation(async function* () {}),
     acquireLock: vi.fn().mockResolvedValue(null),
     releaseLock: vi.fn().mockResolvedValue(undefined),
     extendLock: vi.fn().mockResolvedValue(true),
-    get: vi.fn().mockImplementation(async (key: string) => {
-      return cache.get(key) ?? null;
+    get: vi.fn().mockImplementation((key: string) => {
+      return Promise.resolve(cache.get(key) ?? null);
     }),
-    set: vi.fn().mockImplementation(async (key: string, value: unknown) => {
+    set: vi.fn().mockImplementation((key: string, value: unknown) => {
       cache.set(key, value);
+      return Promise.resolve();
     }),
-    delete: vi.fn().mockImplementation(async (key: string) => {
+    delete: vi.fn().mockImplementation((key: string) => {
       cache.delete(key);
+      return Promise.resolve();
     }),
   };
 }
@@ -918,6 +928,7 @@ function createMockChatInstance(state: StateAdapter): ChatInstance {
     processAction: vi.fn(),
     processModalSubmit: vi.fn().mockResolvedValue(undefined),
     processModalClose: vi.fn(),
+    processSlashCommand: vi.fn(),
     getState: () => state,
     getUserName: () => "test-bot",
     getLogger: () => mockLogger,
@@ -946,7 +957,7 @@ describe("multi-workspace mode", () => {
       logger: mockLogger,
     });
     await expect(
-      adapter.setInstallation("T123", { botToken: "xoxb-token" }),
+      adapter.setInstallation("T123", { botToken: "xoxb-token" })
     ).rejects.toThrow("Adapter not initialized");
   });
 
@@ -1153,8 +1164,47 @@ describe("multi-workspace mode with encryption", () => {
         signingSecret: secret,
         logger: mockLogger,
         encryptionKey: shortKey,
-      }),
+      })
     ).toThrow("Encryption key must decode to exactly 32 bytes");
+  });
+});
+
+// ============================================================================
+// Installation Key Prefix Tests
+// ============================================================================
+
+describe("installationKeyPrefix", () => {
+  const secret = "test-signing-secret";
+
+  it("uses custom installationKeyPrefix for storage key", async () => {
+    const state = createMockState();
+    const adapter = createSlackAdapter({
+      signingSecret: secret,
+      logger: mockLogger,
+      installationKeyPrefix: "myapp:workspaces",
+    });
+    await adapter.initialize(createMockChatInstance(state));
+
+    await adapter.setInstallation("T_CUSTOM_1", { botToken: "xoxb-token" });
+
+    expect(state.cache.has("myapp:workspaces:T_CUSTOM_1")).toBe(true);
+    expect(state.cache.has("slack:installation:T_CUSTOM_1")).toBe(false);
+
+    const retrieved = await adapter.getInstallation("T_CUSTOM_1");
+    expect(retrieved?.botToken).toBe("xoxb-token");
+  });
+
+  it("uses default slack:installation prefix when installationKeyPrefix is omitted", async () => {
+    const state = createMockState();
+    const adapter = createSlackAdapter({
+      signingSecret: secret,
+      logger: mockLogger,
+    });
+    await adapter.initialize(createMockChatInstance(state));
+
+    await adapter.setInstallation("T_DEFAULT_1", { botToken: "xoxb-token" });
+
+    expect(state.cache.has("slack:installation:T_DEFAULT_1")).toBe(true);
   });
 });
 
@@ -1195,7 +1245,7 @@ describe("handleOAuthCallback", () => {
     await adapter.initialize(createMockChatInstance(state));
 
     const request = new Request(
-      "https://example.com/auth/callback/slack?code=oauth-code-123",
+      "https://example.com/auth/callback/slack?code=oauth-code-123"
     );
     const result = await adapter.handleOAuthCallback(request);
 
@@ -1219,10 +1269,10 @@ describe("handleOAuthCallback", () => {
     await adapter.initialize(createMockChatInstance(state));
 
     const request = new Request(
-      "https://example.com/auth/callback/slack?code=test",
+      "https://example.com/auth/callback/slack?code=test"
     );
     await expect(adapter.handleOAuthCallback(request)).rejects.toThrow(
-      "clientId and clientSecret are required",
+      "clientId and clientSecret are required"
     );
   });
 });
@@ -1243,7 +1293,7 @@ describe("withBotToken", () => {
     await adapter.initialize(createMockChatInstance(state));
 
     let callbackRan = false;
-    await adapter.withBotToken("xoxb-context-token", async () => {
+    await adapter.withBotToken("xoxb-context-token", () => {
       callbackRan = true;
     });
     expect(callbackRan).toBe(true);
@@ -1264,12 +1314,324 @@ describe("withBotToken", () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
         tokens.push("A");
       }),
-      adapter.withBotToken("xoxb-token-B", async () => {
+      adapter.withBotToken("xoxb-token-B", () => {
         tokens.push("B");
       }),
     ]);
 
     expect(tokens).toContain("A");
     expect(tokens).toContain("B");
+  });
+});
+
+// ============================================================================
+// DM Message Handling Tests
+// ============================================================================
+
+describe("DM message handling", () => {
+  const secret = "test-signing-secret";
+
+  it("top-level DM messages use empty threadTs (matches openDM subscriptions)", async () => {
+    const state = createMockState();
+    const chatInstance = createMockChatInstance(state);
+    const adapter = createSlackAdapter({
+      botToken: "xoxb-test-token",
+      signingSecret: secret,
+      logger: mockLogger,
+    });
+    await adapter.initialize(chatInstance);
+
+    const body = JSON.stringify({
+      type: "event_callback",
+      team_id: "T123",
+      event: {
+        type: "message",
+        user: "U_USER",
+        channel: "D_DM_CHAN",
+        channel_type: "im",
+        text: "hello from DM",
+        ts: "1234567890.111111",
+      },
+    });
+    const request = createWebhookRequest(body, secret);
+    await adapter.handleWebhook(request);
+
+    expect(chatInstance.processMessage).toHaveBeenCalledWith(
+      adapter,
+      "slack:D_DM_CHAN:",
+      expect.any(Function),
+      undefined
+    );
+  });
+
+  it("DM thread replies use parent thread_ts", async () => {
+    const state = createMockState();
+    const chatInstance = createMockChatInstance(state);
+    const adapter = createSlackAdapter({
+      botToken: "xoxb-test-token",
+      signingSecret: secret,
+      logger: mockLogger,
+    });
+    await adapter.initialize(chatInstance);
+
+    const body = JSON.stringify({
+      type: "event_callback",
+      team_id: "T123",
+      event: {
+        type: "message",
+        user: "U_USER",
+        channel: "D_DM_CHAN",
+        channel_type: "im",
+        text: "reply in DM thread",
+        ts: "1234567890.222222",
+        thread_ts: "1234567890.111111",
+      },
+    });
+    const request = createWebhookRequest(body, secret);
+    await adapter.handleWebhook(request);
+
+    expect(chatInstance.processMessage).toHaveBeenCalledWith(
+      adapter,
+      "slack:D_DM_CHAN:1234567890.111111",
+      expect.any(Function),
+      undefined
+    );
+  });
+
+  it("DM messages have isMention set to true", async () => {
+    const state = createMockState();
+    const chatInstance = createMockChatInstance(state);
+    // Capture the factory function to invoke it
+    chatInstance.processMessage = vi.fn();
+    const adapter = createSlackAdapter({
+      botToken: "xoxb-test-token",
+      signingSecret: secret,
+      logger: mockLogger,
+    });
+    await adapter.initialize(chatInstance);
+
+    const body = JSON.stringify({
+      type: "event_callback",
+      team_id: "T123",
+      event: {
+        type: "message",
+        user: "U_USER",
+        channel: "D_DM_CHAN",
+        channel_type: "im",
+        text: "hello from DM",
+        ts: "1234567890.333333",
+      },
+    });
+    const request = createWebhookRequest(body, secret);
+    await adapter.handleWebhook(request);
+
+    // Get the factory function passed to processMessage
+    const factory = (chatInstance.processMessage as ReturnType<typeof vi.fn>)
+      .mock.calls[0][2];
+    const message = await factory();
+    expect(message.isMention).toBe(true);
+  });
+
+  it("channel messages do NOT have isMention auto-set", async () => {
+    const state = createMockState();
+    const chatInstance = createMockChatInstance(state);
+    chatInstance.processMessage = vi.fn();
+    const adapter = createSlackAdapter({
+      botToken: "xoxb-test-token",
+      signingSecret: secret,
+      logger: mockLogger,
+    });
+    await adapter.initialize(chatInstance);
+
+    const body = JSON.stringify({
+      type: "event_callback",
+      team_id: "T123",
+      event: {
+        type: "message",
+        user: "U_USER",
+        channel: "C_CHANNEL",
+        text: "hello from channel",
+        ts: "1234567890.444444",
+      },
+    });
+    const request = createWebhookRequest(body, secret);
+    await adapter.handleWebhook(request);
+
+    const factory = (chatInstance.processMessage as ReturnType<typeof vi.fn>)
+      .mock.calls[0][2];
+    const message = await factory();
+    expect(message.isMention).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// Slash Command Tests
+// ============================================================================
+
+describe("handleWebhook - slash commands", () => {
+  const secret = "test-signing-secret";
+  const adapter = createSlackAdapter({
+    botToken: "xoxb-test-token",
+    signingSecret: secret,
+    logger: mockLogger,
+  });
+
+  it("detects slash command payload (form-urlencoded with command field)", async () => {
+    const state = createMockState();
+    const chatInstance = createMockChatInstance(state);
+    await adapter.initialize(chatInstance);
+
+    const body = new URLSearchParams({
+      command: "/help",
+      text: "topic search",
+      user_id: "U123456",
+      channel_id: "C789ABC",
+      trigger_id: "trigger-123",
+      team_id: "T_TEAM_1",
+    }).toString();
+
+    const request = createWebhookRequest(body, secret, {
+      contentType: "application/x-www-form-urlencoded",
+    });
+
+    const response = await adapter.handleWebhook(request);
+    expect(response.status).toBe(200);
+    expect(chatInstance.processSlashCommand).toHaveBeenCalled();
+  });
+
+  it("passes command, text, user, and triggerId to processSlashCommand", async () => {
+    const state = createMockState();
+    const chatInstance = createMockChatInstance(state);
+    await adapter.initialize(chatInstance);
+
+    const body = new URLSearchParams({
+      command: "/status",
+      text: "verbose",
+      user_id: "U_USER_1",
+      channel_id: "C_CHANNEL_1",
+      trigger_id: "trigger-456",
+      team_id: "T_TEAM_1",
+    }).toString();
+
+    const request = createWebhookRequest(body, secret, {
+      contentType: "application/x-www-form-urlencoded",
+    });
+
+    await adapter.handleWebhook(request);
+
+    const call = (chatInstance.processSlashCommand as ReturnType<typeof vi.fn>)
+      .mock.calls[0];
+    const event = call[0];
+
+    expect(event.command).toBe("/status");
+    expect(event.text).toBe("verbose");
+    expect(event.user.userId).toBe("U_USER_1");
+    expect(event.triggerId).toBe("trigger-456");
+    expect(event.adapter).toBe(adapter);
+    expect(event.channelId).toBe("slack:C_CHANNEL_1");
+  });
+
+  it("does not treat interactive payload as slash command", async () => {
+    const payload = JSON.stringify({
+      type: "block_actions",
+      user: { id: "U123", username: "user" },
+      actions: [{ action_id: "test" }],
+      container: { message_ts: "123", channel_id: "C456" },
+      channel: { id: "C456", name: "general" },
+      message: { ts: "123" },
+    });
+    const body = `payload=${encodeURIComponent(payload)}`;
+
+    const request = createWebhookRequest(body, secret, {
+      contentType: "application/x-www-form-urlencoded",
+    });
+
+    const response = await adapter.handleWebhook(request);
+    expect(response.status).toBe(200);
+  });
+
+  it("returns 200 immediately for slash commands", async () => {
+    const state = createMockState();
+    const chatInstance = createMockChatInstance(state);
+    await adapter.initialize(chatInstance);
+
+    const body = new URLSearchParams({
+      command: "/feedback",
+      text: "",
+      user_id: "U123",
+      channel_id: "C456",
+      team_id: "T_TEAM_1",
+    }).toString();
+
+    const request = createWebhookRequest(body, secret, {
+      contentType: "application/x-www-form-urlencoded",
+    });
+
+    const response = await adapter.handleWebhook(request);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("");
+  });
+
+  it("handles slash command in multi-workspace mode", async () => {
+    const state = createMockState();
+    const chatInstance = createMockChatInstance(state);
+    const multiAdapter = createSlackAdapter({
+      signingSecret: secret,
+      logger: mockLogger,
+    });
+    await multiAdapter.initialize(chatInstance);
+
+    await multiAdapter.setInstallation("T_SLASH_TEAM", {
+      botToken: "xoxb-slash-token",
+      botUserId: "U_SLASH_BOT",
+    });
+
+    const body = new URLSearchParams({
+      command: "/help",
+      text: "",
+      user_id: "U123",
+      channel_id: "C456",
+      team_id: "T_SLASH_TEAM",
+    }).toString();
+
+    const request = createWebhookRequest(body, secret, {
+      contentType: "application/x-www-form-urlencoded",
+    });
+
+    const response = await multiAdapter.handleWebhook(request);
+    expect(response.status).toBe(200);
+    expect(chatInstance.processSlashCommand).toHaveBeenCalled();
+  });
+
+  it("includes raw payload in event", async () => {
+    const state = createMockState();
+    const chatInstance = createMockChatInstance(state);
+    await adapter.initialize(chatInstance);
+
+    const body = new URLSearchParams({
+      command: "/deploy",
+      text: "production",
+      user_id: "U_DEPLOY",
+      user_name: "deployer",
+      channel_id: "C_DEPLOY",
+      channel_name: "ops",
+      team_id: "T_TEAM",
+      response_url: "https://hooks.slack.com/commands/xxx",
+    }).toString();
+
+    const request = createWebhookRequest(body, secret, {
+      contentType: "application/x-www-form-urlencoded",
+    });
+
+    await adapter.handleWebhook(request);
+
+    const call = (chatInstance.processSlashCommand as ReturnType<typeof vi.fn>)
+      .mock.calls[0];
+    const event = call[0];
+
+    expect(event.raw.command).toBe("/deploy");
+    expect(event.raw.text).toBe("production");
+    expect(event.raw.channel_id).toBe("C_DEPLOY");
+    expect(event.raw.response_url).toBe("https://hooks.slack.com/commands/xxx");
   });
 });

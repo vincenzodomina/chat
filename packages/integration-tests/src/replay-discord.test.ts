@@ -26,6 +26,9 @@ import {
   expectValidAction,
 } from "./replay-test-utils";
 
+const ENABLE_AI_REGEX = /enable\s*AI/i;
+const AI_WORD_REGEX = /\bAI\b/i;
+
 // Runtime check that throws if null and returns the value
 // Requires explicit type parameter: defined<Message>(capturedMessage)
 function defined<T>(value: unknown): T {
@@ -64,7 +67,7 @@ describe("Discord Replay Tests", () => {
             capturedAction = event;
             await event.thread.post(`Hello, ${event.user.fullName}!`);
           },
-        },
+        }
       );
 
       const response = await ctx.sendWebhook(discordFixtures.buttonClickHello);
@@ -83,8 +86,8 @@ describe("Discord Replay Tests", () => {
 
       expect(ctx.mockApi.messages.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: expect.stringContaining("Hello, Malte"),
-        }),
+          content: expect.stringContaining("Hello, Test User"),
+        })
       );
     });
 
@@ -97,17 +100,17 @@ describe("Discord Replay Tests", () => {
             // Simulate the fetchMessages action from bot.tsx
             const result = await event.thread.adapter.fetchMessages(
               event.thread.id,
-              { limit: 5, direction: "backward" },
+              { limit: 5, direction: "backward" }
             );
             await event.thread.post(
-              `Fetched ${result.messages.length} messages`,
+              `Fetched ${result.messages.length} messages`
             );
           },
-        },
+        }
       );
 
       const response = await ctx.sendWebhook(
-        discordFixtures.buttonClickMessages,
+        discordFixtures.buttonClickMessages
       );
 
       expect(response.status).toBe(200);
@@ -131,10 +134,10 @@ describe("Discord Replay Tests", () => {
           onAction: async (event) => {
             capturedAction = event;
             await event.thread.post(
-              `User: ${event.user.fullName}, Platform: ${event.adapter.name}`,
+              `User: ${event.user.fullName}, Platform: ${event.adapter.name}`
             );
           },
-        },
+        }
       );
 
       const response = await ctx.sendWebhook(discordFixtures.buttonClickInfo);
@@ -151,8 +154,8 @@ describe("Discord Replay Tests", () => {
 
       expect(ctx.mockApi.messages.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: expect.stringContaining("Malte"),
-        }),
+          content: expect.stringContaining("Test User"),
+        })
       );
     });
 
@@ -163,14 +166,14 @@ describe("Discord Replay Tests", () => {
           onAction: async (event) => {
             capturedAction = event;
             await event.thread.post(
-              `Goodbye, ${event.user.fullName}! See you later.`,
+              `Goodbye, ${event.user.fullName}! See you later.`
             );
           },
-        },
+        }
       );
 
       const response = await ctx.sendWebhook(
-        discordFixtures.buttonClickGoodbye,
+        discordFixtures.buttonClickGoodbye
       );
 
       expect(response.status).toBe(200);
@@ -186,7 +189,7 @@ describe("Discord Replay Tests", () => {
       expect(ctx.mockApi.messages.create).toHaveBeenCalledWith(
         expect.objectContaining({
           content: expect.stringContaining("Goodbye"),
-        }),
+        })
       );
     });
   });
@@ -200,7 +203,7 @@ describe("Discord Replay Tests", () => {
             capturedAction = event;
             await event.thread.post("DM received!");
           },
-        },
+        }
       );
 
       const response = await ctx.sendWebhook(discordFixtures.dmButtonClick);
@@ -223,10 +226,10 @@ describe("Discord Replay Tests", () => {
       ctx = await createDiscordTestContext(
         { botName: "Chat SDK Demo", applicationId: REAL_BOT_ID },
         {
-          onAction: async (event) => {
+          onAction: (event) => {
             capturedAction = event;
           },
-        },
+        }
       );
 
       await ctx.sendWebhook(discordFixtures.dmButtonClick);
@@ -234,7 +237,7 @@ describe("Discord Replay Tests", () => {
       // DM uses `user` field directly instead of `member.user`
       expect(capturedAction?.user.userId).toBe(REAL_USER_ID);
       expect(capturedAction?.user.userName).toBe(REAL_USER_NAME);
-      expect(capturedAction?.user.fullName).toBe("Malte");
+      expect(capturedAction?.user.fullName).toBe("Test User");
     });
   });
 
@@ -252,7 +255,7 @@ describe("Discord Replay Tests", () => {
             });
             await event.thread.post(`Hello, ${event.user.fullName}!`);
           },
-        },
+        }
       );
 
       // First user clicks hello
@@ -273,10 +276,10 @@ describe("Discord Replay Tests", () => {
       ctx = await createDiscordTestContext(
         { botName: "Chat SDK Demo", applicationId: REAL_BOT_ID },
         {
-          onAction: async (event) => {
+          onAction: (event) => {
             capturedAction = event;
           },
-        },
+        }
       );
 
       await ctx.sendWebhook(discordFixtures.differentUser);
@@ -292,10 +295,10 @@ describe("Discord Replay Tests", () => {
       ctx = await createDiscordTestContext(
         { botName: "Chat SDK Demo", applicationId: REAL_BOT_ID },
         {
-          onAction: async (event) => {
+          onAction: (event) => {
             capturedAction = event;
           },
-        },
+        }
       );
 
       await ctx.sendWebhook(discordFixtures.buttonClickHello);
@@ -304,7 +307,7 @@ describe("Discord Replay Tests", () => {
       // When the interaction happens in a thread, the parent channel is included
       const REAL_CHANNEL_ID = discordFixtures.metadata.channelId;
       expect(capturedAction?.thread.id).toBe(
-        `discord:${REAL_GUILD_ID}:${REAL_CHANNEL_ID}:${REAL_THREAD_ID}`,
+        `discord:${REAL_GUILD_ID}:${REAL_CHANNEL_ID}:${REAL_THREAD_ID}`
       );
       expect(capturedAction?.threadId).toBe(capturedAction?.thread.id);
     });
@@ -315,10 +318,10 @@ describe("Discord Replay Tests", () => {
       ctx = await createDiscordTestContext(
         { botName: "Chat SDK Demo", applicationId: REAL_BOT_ID },
         {
-          onAction: async (event) => {
+          onAction: (event) => {
             threadIds.push(event.thread.id);
           },
-        },
+        }
       );
 
       await ctx.sendWebhook(discordFixtures.buttonClickHello);
@@ -340,7 +343,7 @@ describe("Discord Replay Tests", () => {
             const msg = await event.thread.post("Processing...");
             await msg.edit("Done!");
           },
-        },
+        }
       );
 
       await ctx.sendWebhook(discordFixtures.buttonClickHello);
@@ -349,7 +352,7 @@ describe("Discord Replay Tests", () => {
       expect(ctx.mockApi.messages.update).toHaveBeenCalledWith(
         expect.objectContaining({
           content: "Done!",
-        }),
+        })
       );
     });
 
@@ -361,7 +364,7 @@ describe("Discord Replay Tests", () => {
             await event.thread.startTyping();
             await event.thread.post("Done typing!");
           },
-        },
+        }
       );
 
       await ctx.sendWebhook(discordFixtures.buttonClickHello);
@@ -378,7 +381,7 @@ describe("Discord Replay Tests", () => {
             const msg = await event.thread.post("React to this!");
             await msg.addReaction("thumbsup");
           },
-        },
+        }
       );
 
       await ctx.sendWebhook(discordFixtures.buttonClickHello);
@@ -395,7 +398,7 @@ describe("Discord Replay Tests", () => {
             const msg = await event.thread.post("Temporary message");
             await msg.delete();
           },
-        },
+        }
       );
 
       await ctx.sendWebhook(discordFixtures.buttonClickHello);
@@ -414,7 +417,7 @@ describe("Discord Replay Tests", () => {
 
       ctx = await createDiscordTestContext(
         { botName: "Chat SDK Demo", applicationId: REAL_BOT_ID },
-        {},
+        {}
       );
 
       ctx.chat.onAction("hello", helloHandler);
@@ -438,21 +441,21 @@ describe("Discord Replay Tests", () => {
 
       ctx = await createDiscordTestContext(
         { botName: "Chat SDK Demo", applicationId: REAL_BOT_ID },
-        {},
+        {}
       );
 
       ctx.chat.onAction(catchAllHandler);
 
       await ctx.sendWebhook(discordFixtures.buttonClickHello);
       expect(catchAllHandler).toHaveBeenCalledWith(
-        expect.objectContaining({ actionId: "hello" }),
+        expect.objectContaining({ actionId: "hello" })
       );
 
       catchAllHandler.mockClear();
 
       await ctx.sendWebhook(discordFixtures.buttonClickGoodbye);
       expect(catchAllHandler).toHaveBeenCalledWith(
-        expect.objectContaining({ actionId: "goodbye" }),
+        expect.objectContaining({ actionId: "goodbye" })
       );
     });
 
@@ -461,7 +464,7 @@ describe("Discord Replay Tests", () => {
 
       ctx = await createDiscordTestContext(
         { botName: "Chat SDK Demo", applicationId: REAL_BOT_ID },
-        {},
+        {}
       );
 
       ctx.chat.onAction(["hello", "goodbye"], multiHandler);
@@ -487,8 +490,8 @@ describe("Discord Replay Tests", () => {
       ctx = await createDiscordTestContext(
         { botName: "Chat SDK Demo", applicationId: REAL_BOT_ID },
         {
-          onAction: async () => {},
-        },
+          onAction: () => {},
+        }
       );
 
       const response = await ctx.sendWebhook(discordFixtures.buttonClickHello);
@@ -512,7 +515,7 @@ describe("Discord Replay Tests", () => {
               await event.thread.post(`Hello, ${event.user.fullName}!`);
             } else if (event.actionId === "info") {
               await event.thread.post(
-                `Platform: ${event.adapter.name}, Thread: ${event.thread.id}`,
+                `Platform: ${event.adapter.name}, Thread: ${event.thread.id}`
               );
             } else if (event.actionId === "messages") {
               await event.thread.adapter.fetchMessages(event.thread.id, {
@@ -523,7 +526,7 @@ describe("Discord Replay Tests", () => {
               await event.thread.post("Goodbye!");
             }
           },
-        },
+        }
       );
 
       // Step 1: Say Hello
@@ -553,7 +556,7 @@ describe("Discord Replay Tests", () => {
       expect(ctx.mockApi.messages.create).toHaveBeenCalledWith(
         expect.objectContaining({
           content: expect.stringContaining("Goodbye"),
-        }),
+        })
       );
     });
   });
@@ -569,7 +572,7 @@ describe("Discord Replay Tests", () => {
             // Then edit with final content (simulates streaming completion)
             await msg.edit("Done thinking!");
           },
-        },
+        }
       );
 
       await ctx.sendWebhook(discordFixtures.buttonClickInfo);
@@ -578,14 +581,14 @@ describe("Discord Replay Tests", () => {
       expect(ctx.mockApi.messages.create).toHaveBeenCalledWith(
         expect.objectContaining({
           content: "Thinking...",
-        }),
+        })
       );
 
       // Should update with final content
       expect(ctx.mockApi.messages.update).toHaveBeenCalledWith(
         expect.objectContaining({
           content: "Done thinking!",
-        }),
+        })
       );
     });
 
@@ -600,7 +603,7 @@ describe("Discord Replay Tests", () => {
             editCount.value++;
             await msg.edit(`Completed step ${editCount.value}`);
           },
-        },
+        }
       );
 
       // First button click
@@ -609,7 +612,7 @@ describe("Discord Replay Tests", () => {
       expect(ctx.mockApi.messages.update).toHaveBeenCalledWith(
         expect.objectContaining({
           content: "Completed step 1",
-        }),
+        })
       );
 
       ctx.mockApi.clearMocks();
@@ -620,7 +623,7 @@ describe("Discord Replay Tests", () => {
       expect(ctx.mockApi.messages.update).toHaveBeenCalledWith(
         expect.objectContaining({
           content: "Completed step 2",
-        }),
+        })
       );
     });
 
@@ -633,7 +636,7 @@ describe("Discord Replay Tests", () => {
             await msg.edit("Step 1... Step 2...");
             await msg.edit("Step 1... Step 2... Done!");
           },
-        },
+        }
       );
 
       await ctx.sendWebhook(discordFixtures.buttonClickHello);
@@ -672,10 +675,10 @@ describe("Discord Gateway Forwarded Events", () => {
       ctx = await createDiscordTestContext(
         { botName: "TestBot", applicationId: DISCORD_APPLICATION_ID },
         {
-          onMention: async (_thread, message) => {
+          onMention: (_thread, message) => {
             capturedMessage = message;
           },
-        },
+        }
       );
 
       // Send a message FROM the bot (author.id === applicationId)
@@ -699,10 +702,10 @@ describe("Discord Gateway Forwarded Events", () => {
       ctx = await createDiscordTestContext(
         { botName: "TestBot", applicationId: DISCORD_APPLICATION_ID },
         {
-          onMention: async (_thread, message) => {
+          onMention: (_thread, message) => {
             capturedMessage = message;
           },
-        },
+        }
       );
 
       // Send a message FROM a regular user that mentions the bot
@@ -733,10 +736,10 @@ describe("Discord Gateway Forwarded Events", () => {
             // Subscribe to the thread when mentioned
             await thread.subscribe();
           },
-          onSubscribed: async () => {
+          onSubscribed: () => {
             subscribedMessageCount++;
           },
-        },
+        }
       );
 
       // First, trigger a mention to subscribe
@@ -784,13 +787,13 @@ describe("Discord Gateway Forwarded Events", () => {
           onMention: async (thread) => {
             await thread.subscribe();
           },
-          onSubscribed: async (_thread, message) => {
+          onSubscribed: (_thread, message) => {
             // This simulates the regex check in bot.tsx
-            if (/enable\s*AI/i.test(message.text)) {
+            if (ENABLE_AI_REGEX.test(message.text)) {
               aiModeEnabled = true;
             }
           },
-        },
+        }
       );
 
       // First, trigger a mention to subscribe
@@ -824,10 +827,10 @@ describe("Discord Gateway Forwarded Events", () => {
       ctx = await createDiscordTestContext(
         { botName: "TestBot", applicationId: DISCORD_APPLICATION_ID },
         {
-          onReaction: async (event) => {
+          onReaction: (event) => {
             capturedReaction = event;
           },
-        },
+        }
       );
 
       // Send a reaction FROM the bot
@@ -851,10 +854,10 @@ describe("Discord Gateway Forwarded Events", () => {
       ctx = await createDiscordTestContext(
         { botName: "TestBot", applicationId: DISCORD_APPLICATION_ID },
         {
-          onReaction: async (event) => {
+          onReaction: (event) => {
             capturedReaction = event;
           },
-        },
+        }
       );
 
       // Send a reaction FROM a regular user
@@ -884,11 +887,11 @@ describe("Discord Gateway Forwarded Events", () => {
       ctx = await createDiscordTestContext(
         { botName: "TestBot", applicationId: DISCORD_APPLICATION_ID },
         {
-          onMention: async (thread, message) => {
+          onMention: (thread, message) => {
             capturedMessage = message;
             capturedThread = thread;
           },
-        },
+        }
       );
 
       const gatewayEvent = createGatewayMessageEvent({
@@ -917,10 +920,10 @@ describe("Discord Gateway Forwarded Events", () => {
           onMention: async (thread) => {
             await thread.subscribe();
           },
-          onSubscribed: async (_thread, message) => {
+          onSubscribed: (_thread, message) => {
             capturedMessages.push(message);
           },
-        },
+        }
       );
 
       // First, trigger a mention to subscribe
@@ -960,11 +963,11 @@ describe("Discord Gateway Forwarded Events", () => {
       ctx = await createDiscordTestContext(
         { botName: "Chat SDK Demo", applicationId: REAL_BOT_ID },
         {
-          onMention: async (thread, message) => {
+          onMention: (thread, message) => {
             capturedMessage = message;
             capturedThread = thread;
           },
-        },
+        }
       );
 
       await ctx.sendGatewayEvent(discordFixtures.gatewayMention);
@@ -986,10 +989,10 @@ describe("Discord Gateway Forwarded Events", () => {
       ctx = await createDiscordTestContext(
         { botName: "Chat SDK Demo", applicationId: REAL_BOT_ID },
         {
-          onMention: async (_thread, message) => {
+          onMention: (_thread, message) => {
             capturedMessage = message;
           },
-        },
+        }
       );
 
       await ctx.sendGatewayEvent(discordFixtures.gatewayAIMention);
@@ -998,7 +1001,7 @@ describe("Discord Gateway Forwarded Events", () => {
       expect(msg.text).toBe("<@1457469483726668048> AI What is love");
       expect(msg.isMention).toBe(true);
       // Verify the message contains "AI" for AI mode trigger
-      expect(msg.text).toMatch(/\bAI\b/i);
+      expect(msg.text).toMatch(AI_WORD_REGEX);
     });
 
     it("should skip real gatewayBotWelcome fixture (bot's own message)", async () => {
@@ -1007,10 +1010,10 @@ describe("Discord Gateway Forwarded Events", () => {
       ctx = await createDiscordTestContext(
         { botName: "Chat SDK Demo", applicationId: REAL_BOT_ID },
         {
-          onMention: async (_thread, message) => {
+          onMention: (_thread, message) => {
             capturedMessage = message;
           },
-        },
+        }
       );
 
       // The bot's welcome message should be skipped because isMe=true
@@ -1027,13 +1030,13 @@ describe("Discord Gateway Forwarded Events", () => {
       ctx = await createDiscordTestContext(
         { botName: "Chat SDK Demo", applicationId: REAL_BOT_ID },
         {
-          onMention: async () => {
+          onMention: () => {
             mentionCount++;
           },
-          onSubscribed: async () => {
+          onSubscribed: () => {
             subscribedCount++;
           },
-        },
+        }
       );
 
       // Bot's welcome message in thread should be skipped due to isMe=true
@@ -1049,10 +1052,10 @@ describe("Discord Gateway Forwarded Events", () => {
       ctx = await createDiscordTestContext(
         { botName: "Chat SDK Demo", applicationId: REAL_BOT_ID },
         {
-          onReaction: async (event) => {
+          onReaction: (event) => {
             capturedReaction = event;
           },
-        },
+        }
       );
 
       await ctx.sendGatewayEvent(discordFixtures.gatewayReactionAdd);
@@ -1070,10 +1073,10 @@ describe("Discord Gateway Forwarded Events", () => {
       ctx = await createDiscordTestContext(
         { botName: "Chat SDK Demo", applicationId: REAL_BOT_ID },
         {
-          onSubscribed: async (_thread, message) => {
+          onSubscribed: (_thread, message) => {
             capturedMessages.push(message);
           },
-        },
+        }
       );
 
       // Mock the channels.get API to return parent_id for the thread
@@ -1105,10 +1108,10 @@ describe("Discord Gateway Forwarded Events", () => {
       ctx = await createDiscordTestContext(
         { botName: "Chat SDK Demo", applicationId: REAL_BOT_ID },
         {
-          onSubscribed: async (_thread, message) => {
+          onSubscribed: (_thread, message) => {
             dmMessage = message;
           },
-        },
+        }
       );
 
       // Mock the channels.get API to return parent_id for the thread
@@ -1137,13 +1140,13 @@ describe("Discord Gateway Forwarded Events", () => {
       ctx = await createDiscordTestContext(
         { botName: "Chat SDK Demo", applicationId: REAL_BOT_ID },
         {
-          onMention: async () => {
+          onMention: () => {
             handlerCallCount++;
           },
-          onSubscribed: async () => {
+          onSubscribed: () => {
             handlerCallCount++;
           },
-        },
+        }
       );
 
       // Mock the channels.get API
@@ -1182,11 +1185,11 @@ describe("Discord Gateway Forwarded Events", () => {
           mentionRoleIds: [REAL_ROLE_ID],
         },
         {
-          onMention: async (thread, message) => {
+          onMention: (thread, message) => {
             capturedMessage = message;
             capturedThread = thread;
           },
-        },
+        }
       );
 
       // Send the role mention fixture
@@ -1214,10 +1217,10 @@ describe("Discord Gateway Forwarded Events", () => {
           mentionRoleIds: ["DIFFERENT_ROLE_ID"],
         },
         {
-          onMention: async (_thread, message) => {
+          onMention: (_thread, message) => {
             capturedMessage = message;
           },
-        },
+        }
       );
 
       // Send the role mention fixture - should NOT trigger because role ID doesn't match
@@ -1237,10 +1240,10 @@ describe("Discord Gateway Forwarded Events", () => {
           // No mentionRoleIds configured
         },
         {
-          onMention: async (_thread, message) => {
+          onMention: (_thread, message) => {
             capturedMessage = message;
           },
-        },
+        }
       );
 
       // Send the role mention fixture - should NOT trigger because no roles configured
@@ -1260,10 +1263,10 @@ describe("Discord Gateway Forwarded Events", () => {
           mentionRoleIds: [REAL_ROLE_ID],
         },
         {
-          onMention: async (_thread, message) => {
+          onMention: (_thread, message) => {
             capturedMessage = message;
           },
-        },
+        }
       );
 
       // The gatewayRoleMention has mention_roles but NO mentions (no direct @user)
@@ -1286,10 +1289,10 @@ describe("Discord Gateway Forwarded Events", () => {
           mentionRoleIds: ["OTHER_ROLE_1", REAL_ROLE_ID, "OTHER_ROLE_2"],
         },
         {
-          onMention: async (_thread, message) => {
+          onMention: (_thread, message) => {
             capturedMessage = message;
           },
-        },
+        }
       );
 
       await ctx.sendGatewayEvent(discordFixtures.gatewayRoleMention);
@@ -1308,10 +1311,10 @@ describe("Discord Gateway Forwarded Events", () => {
           mentionRoleIds: ["ROLE_123"],
         },
         {
-          onMention: async (_thread, message) => {
+          onMention: (_thread, message) => {
             capturedMessage = message;
           },
-        },
+        }
       );
 
       // Create a synthetic Gateway event with role mention

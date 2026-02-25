@@ -33,8 +33,8 @@ const CHANNEL_STATE_KEY_PREFIX = "channel-state:";
  */
 export interface SerializedChannel {
   _type: "chat:Channel";
-  id: string;
   adapterName: string;
+  id: string;
   isDM: boolean;
   isExternalChannel?: boolean;
 }
@@ -43,19 +43,19 @@ export interface SerializedChannel {
  * Config for creating a ChannelImpl with explicit adapter/state instances.
  */
 interface ChannelImplConfigWithAdapter {
-  id: string;
   adapter: Adapter;
-  stateAdapter: StateAdapter;
+  id: string;
   isDM?: boolean;
   isExternalChannel?: boolean;
+  stateAdapter: StateAdapter;
 }
 
 /**
  * Config for creating a ChannelImpl with lazy adapter resolution.
  */
 interface ChannelImplConfigLazy {
-  id: string;
   adapterName: string;
+  id: string;
   isDM?: boolean;
   isExternalChannel?: boolean;
 }
@@ -63,7 +63,7 @@ interface ChannelImplConfigLazy {
 type ChannelImplConfig = ChannelImplConfigWithAdapter | ChannelImplConfigLazy;
 
 function isLazyConfig(
-  config: ChannelImplConfig,
+  config: ChannelImplConfig
 ): config is ChannelImplConfigLazy {
   return "adapterName" in config && !("adapter" in config);
 }
@@ -85,7 +85,7 @@ export class ChannelImpl<TState = Record<string, unknown>>
   readonly isExternalChannel: boolean;
 
   private _adapter?: Adapter;
-  private _adapterName?: string;
+  private readonly _adapterName?: string;
   private _stateAdapterInstance?: StateAdapter;
   private _name: string | null = null;
 
@@ -115,7 +115,7 @@ export class ChannelImpl<TState = Record<string, unknown>>
     const adapter = chat.getAdapter(this._adapterName);
     if (!adapter) {
       throw new Error(
-        `Adapter "${this._adapterName}" not found in Chat singleton`,
+        `Adapter "${this._adapterName}" not found in Chat singleton`
       );
     }
 
@@ -139,13 +139,13 @@ export class ChannelImpl<TState = Record<string, unknown>>
 
   get state(): Promise<TState | null> {
     return this._stateAdapter.get<TState>(
-      `${CHANNEL_STATE_KEY_PREFIX}${this.id}`,
+      `${CHANNEL_STATE_KEY_PREFIX}${this.id}`
     );
   }
 
   async setState(
     newState: Partial<TState>,
-    options?: { replace?: boolean },
+    options?: { replace?: boolean }
   ): Promise<void> {
     const key = `${CHANNEL_STATE_KEY_PREFIX}${this.id}`;
 
@@ -245,7 +245,7 @@ export class ChannelImpl<TState = Record<string, unknown>>
   }
 
   async post(
-    message: string | PostableMessage | CardJSXElement,
+    message: string | PostableMessage | CardJSXElement
   ): Promise<SentMessage> {
     // Handle AsyncIterable (streaming) — not supported at channel level,
     // fall through to postMessage
@@ -274,7 +274,7 @@ export class ChannelImpl<TState = Record<string, unknown>>
   }
 
   private async postSingleMessage(
-    postable: AdapterPostableMessage,
+    postable: AdapterPostableMessage
   ): Promise<SentMessage> {
     const rawMessage = this.adapter.postChannelMessage
       ? await this.adapter.postChannelMessage(this.id, postable)
@@ -286,7 +286,7 @@ export class ChannelImpl<TState = Record<string, unknown>>
   async postEphemeral(
     user: string | Author,
     message: AdapterPostableMessage | CardJSXElement,
-    options: PostEphemeralOptions,
+    options: PostEphemeralOptions
   ): Promise<EphemeralMessage | null> {
     const { fallbackToDM } = options;
     const userId = typeof user === "string" ? user : user.userId;
@@ -324,8 +324,8 @@ export class ChannelImpl<TState = Record<string, unknown>>
     return null;
   }
 
-  async startTyping(): Promise<void> {
-    await this.adapter.startTyping(this.id);
+  async startTyping(status?: string): Promise<void> {
+    await this.adapter.startTyping(this.id, status);
   }
 
   mentionUser(userId: string): string {
@@ -344,7 +344,7 @@ export class ChannelImpl<TState = Record<string, unknown>>
 
   static fromJSON<TState = Record<string, unknown>>(
     json: SerializedChannel,
-    adapter?: Adapter,
+    adapter?: Adapter
   ): ChannelImpl<TState> {
     const channel = new ChannelImpl<TState>({
       id: json.id,
@@ -369,7 +369,7 @@ export class ChannelImpl<TState = Record<string, unknown>>
   private createSentMessage(
     messageId: string,
     postable: AdapterPostableMessage,
-    threadIdOverride?: string,
+    threadIdOverride?: string
   ): SentMessage {
     const adapter = this.adapter;
     const threadId = threadIdOverride || this.id;
@@ -402,7 +402,7 @@ export class ChannelImpl<TState = Record<string, unknown>>
       },
 
       async edit(
-        newContent: string | PostableMessage | CardJSXElement,
+        newContent: string | PostableMessage | CardJSXElement
       ): Promise<SentMessage> {
         let editPostable: string | AdapterPostableMessage = newContent as
           | string

@@ -1,8 +1,5 @@
-import { MessageCircleIcon } from "lucide-react";
-
 export const Logo = () => (
   <div className="flex items-center gap-2">
-    <MessageCircleIcon className="size-5" />
     <p className="font-semibold text-xl tracking-tight">Chat SDK</p>
   </div>
 );
@@ -18,16 +15,28 @@ export const nav = [
     href: "/docs",
   },
   {
+    label: "Adapters",
+    href: "/docs/adapters",
+  },
+  {
+    label: "Guides",
+    href: "/docs/guides/slack-nextjs",
+  },
+  {
+    label: "API",
+    href: "/docs/api",
+  },
+  {
     label: "Source",
     href: `https://github.com/${github.owner}/${github.repo}/`,
   },
 ];
 
 export const suggestions = [
-  "What is Chat SDK?",
-  "What can I make with Chat SDK?",
-  "What syntax does Chat SDK support?",
-  "How do I deploy my Chat SDK site?",
+  "What platforms does Chat SDK support?",
+  "How do I set up a Slack bot with Next.js?",
+  "How do I send cards and interactive messages?",
+  "How do I stream AI responses in real-time?",
 ];
 
 export const title = "Chat SDK Documentation";

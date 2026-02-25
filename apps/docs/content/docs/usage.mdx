@@ -1,6 +1,6 @@
 ---
 title: Usage
-description: Event handlers, threads, messages, and the core patterns of Chat SDK.
+description: Event handlers, threads, channels, messages, and the core patterns of Chat SDK.
 type: guide
 prerequisites:
   - /docs/getting-started
@@ -47,6 +47,16 @@ bot.onNewMessage(/^help$/i, async (thread, message) => {
 });
 ```
 
+### Slash command handler
+
+`onSlashCommand` fires when a user invokes a `/command` in the message composer. See [Slash Commands](/docs/slash-commands) for the full guide.
+
+```typescript title="lib/bot.ts" lineNumbers
+bot.onSlashCommand("/status", async (event) => {
+  await event.channel.post("All systems operational!");
+});
+```
+
 ### Reaction handler
 
 `onReaction` fires when users add or remove emoji reactions to messages.
@@ -76,6 +86,33 @@ The `event` object includes:
 | `message` | `Message` (optional) | The message that was reacted to |
 | `thread` | `Thread` | Thread for posting replies |
 | `adapter` | `Adapter` | The platform adapter |
+
+### Assistant thread handler
+
+`onAssistantThreadStarted` fires when a user opens a new assistant thread in Slack. Use it with the Slack Assistants API to set suggested prompts and status indicators. See [Slack Assistants API](/docs/adapters/slack#slack-assistants-api) for details.
+
+```typescript title="lib/bot.ts" lineNumbers
+bot.onAssistantThreadStarted(async (event) => {
+  const slack = bot.getAdapter("slack") as SlackAdapter;
+  await slack.setSuggestedPrompts(event.channelId, event.threadTs, [
+    { title: "Get started", message: "What can you help me with?" },
+  ]);
+});
+```
+
+### App Home handler
+
+`onAppHomeOpened` fires when a user opens your bot's Home tab in Slack. Use it to publish a dynamic view.
+
+```typescript title="lib/bot.ts" lineNumbers
+bot.onAppHomeOpened(async (event) => {
+  const slack = bot.getAdapter("slack") as SlackAdapter;
+  await slack.publishHomeView(event.userId, {
+    type: "home",
+    blocks: [{ type: "section", text: { type: "mrkdwn", text: "Welcome!" } }],
+  });
+});
+```
 
 ## Threads
 
@@ -115,7 +152,7 @@ await thread.startTyping();
 ```
 
 <Callout type="info">
-Not all platforms support typing indicators. Teams and Google Chat do not have typing APIs. The call is a no-op on unsupported platforms.
+Not all platforms support typing indicators. The call is a no-op on unsupported platforms. See the [adapter feature matrix](/docs/adapters) for details.
 </Callout>
 
 ### Message history
@@ -126,13 +163,12 @@ Access recent messages or iterate through full history:
 // Cached messages from the webhook payload
 const recent = thread.recentMessages;
 
-// Fetch with pagination
-const result = await thread.adapter.fetchMessages(thread.id, {
-  limit: 50,
-  direction: "backward", // Most recent first
-});
+// Newest first (auto-paginates)
+for await (const msg of thread.messages) {
+  console.log(msg.text);
+}
 
-// Async iterator over all messages (oldest first)
+// Oldest first (auto-paginates)
 for await (const msg of thread.allMessages) {
   console.log(msg.text);
 }
@@ -213,6 +249,53 @@ await sent.addReaction(emoji.check);
 await sent.removeReaction(emoji.check);
 ```
 
+## Channels
+
+A `Channel` represents the container that holds threads (e.g., a Slack channel, a Teams conversation). Navigate to a channel from a thread or get one directly:
+
+```typescript title="lib/bot.ts" lineNumbers
+// From a thread
+const channel = thread.channel;
+
+// Directly by ID
+const channel = bot.channel("slack:C123ABC");
+```
+
+### List threads
+
+Iterate threads in a channel, most recently active first:
+
+```typescript title="lib/bot.ts" lineNumbers
+for await (const thread of channel.threads()) {
+  console.log(thread.rootMessage.text, thread.replyCount);
+}
+```
+
+### Channel messages
+
+Iterate top-level messages (not thread replies):
+
+```typescript title="lib/bot.ts" lineNumbers
+for await (const msg of channel.messages) {
+  console.log(msg.text);
+}
+```
+
+### Post to a channel
+
+Post a top-level message (not inside a thread):
+
+```typescript title="lib/bot.ts"
+await channel.post("Hello channel!");
+```
+
+### Channel metadata
+
+```typescript title="lib/bot.ts"
+const info = await channel.fetchMetadata();
+console.log(info.name, info.memberCount);
+```
+
 ## Thread ID format
 
 All thread IDs follow the pattern `{adapter}:{channel}:{thread}`:
@@ -226,16 +309,21 @@ You typically don't need to construct these yourself — they're provided by the
 
 ## Logging
 
-Configure logging when creating the `Chat` instance:
+The `logger` option is optional — if omitted, Chat SDK uses `ConsoleLogger("info")` by default. Each adapter also creates its own child logger automatically.
 
 ```typescript title="lib/bot.ts" lineNumbers
-// Use a built-in log level
+// Use defaults (ConsoleLogger at "info" level)
+const bot = new Chat({
+  // ...
+});
+
+// Or set a specific log level
 const bot = new Chat({
   // ...
   logger: "debug", // "debug" | "info" | "warn" | "error" | "silent"
 });
 
-// Or use ConsoleLogger for child loggers
+// Or use a custom ConsoleLogger for child loggers
 import { ConsoleLogger } from "chat";
 
 const logger = new ConsoleLogger("info");
@@ -245,11 +333,10 @@ const bot = new Chat({
 });
 ```
 
-Pass child loggers to adapters for prefixed log output:
+You can pass child loggers to adapters for prefixed log output, but adapters create their own child loggers by default:
 
 ```typescript title="lib/bot.ts"
 createSlackAdapter({
-  // ...
-  logger: logger.child("slack"),
+  logger: logger.child("slack"), // optional — auto-created if omitted
 });
 ```

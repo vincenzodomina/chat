@@ -6,11 +6,11 @@ prerequisites:
   - /docs/actions
 ---
 
-Modals open form dialogs in response to button clicks. They support text inputs, dropdowns, radio buttons, and server-side validation. Currently supported on Slack.
+Modals open form dialogs in response to button clicks or [slash commands](/docs/slash-commands). They support text inputs, dropdowns, radio buttons, and server-side validation. Currently supported on Slack.
 
 ## Open a modal
 
-Modals are opened from [action handlers](/docs/actions) using `event.openModal()`:
+Modals are opened from [action handlers](/docs/actions) or [slash command handlers](/docs/slash-commands) using `event.openModal()`:
 
 ```tsx title="lib/bot.tsx" lineNumbers
 import { Modal, TextInput, Select, SelectOption } from "chat";
@@ -158,6 +158,7 @@ bot.onModalSubmit("feedback_form", async (event) => {
 | `privateMetadata` | `string` (optional) | Custom context from the Modal component |
 | `relatedThread` | `Thread` (optional) | Thread where the modal was triggered |
 | `relatedMessage` | `SentMessage` (optional) | Message with the button that opened the modal |
+| `relatedChannel` | `Channel` (optional) | Channel where the modal was triggered (from [slash commands](/docs/slash-commands)) |
 | `adapter` | `Adapter` | The platform adapter |
 | `raw` | `unknown` | Platform-specific payload |
 

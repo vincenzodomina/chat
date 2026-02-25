@@ -32,52 +32,52 @@ const convertEmoji = createEmojiConverter("slack");
 
 // Slack Block Kit types (simplified)
 export interface SlackBlock {
-  type: string;
   block_id?: string;
+  type: string;
   [key: string]: unknown;
 }
 
 interface SlackTextObject {
-  type: "plain_text" | "mrkdwn";
-  text: string;
   emoji?: boolean;
+  text: string;
+  type: "plain_text" | "mrkdwn";
 }
 
 interface SlackButtonElement {
-  type: "button";
-  text: SlackTextObject;
   action_id: string;
-  value?: string;
   style?: "primary" | "danger";
+  text: SlackTextObject;
+  type: "button";
+  value?: string;
 }
 
 interface SlackLinkButtonElement {
-  type: "button";
-  text: SlackTextObject;
   action_id: string;
-  url: string;
   style?: "primary" | "danger";
+  text: SlackTextObject;
+  type: "button";
+  url: string;
 }
 
 interface SlackOptionObject {
+  description?: SlackTextObject;
   text: SlackTextObject;
   value: string;
-  description?: SlackTextObject;
 }
 
 interface SlackSelectElement {
-  type: "static_select";
   action_id: string;
-  placeholder?: SlackTextObject;
-  options: SlackOptionObject[];
   initial_option?: SlackOptionObject;
+  options: SlackOptionObject[];
+  placeholder?: SlackTextObject;
+  type: "static_select";
 }
 
 interface SlackRadioSelectElement {
-  type: "radio_buttons";
   action_id: string;
-  options: SlackOptionObject[];
   initial_option?: SlackOptionObject;
+  options: SlackOptionObject[];
+  type: "radio_buttons";
 }
 
 /**
@@ -151,8 +151,14 @@ function convertChildToBlocks(child: CardChild): SlackBlock[] {
   }
 }
 
+/** Convert standard Markdown formatting to Slack mrkdwn */
+function markdownToMrkdwn(text: string): string {
+  // **bold** → *bold*
+  return text.replace(/\*\*(.+?)\*\*/g, "*$1*");
+}
+
 export function convertTextToBlock(element: TextElement): SlackBlock {
-  const text = convertEmoji(element.content);
+  const text = markdownToMrkdwn(convertEmoji(element.content));
   let formattedText = text;
 
   // Apply style
@@ -237,7 +243,7 @@ function convertButtonToElement(button: ButtonElement): SlackButtonElement {
 }
 
 function convertLinkButtonToElement(
-  button: LinkButtonElement,
+  button: LinkButtonElement
 ): SlackLinkButtonElement {
   const element: SlackLinkButtonElement = {
     type: "button",
@@ -293,7 +299,7 @@ function convertSelectToElement(select: SelectElement): SlackSelectElement {
 }
 
 function convertRadioSelectToElement(
-  radioSelect: RadioSelectElement,
+  radioSelect: RadioSelectElement
 ): SlackRadioSelectElement {
   const limitedOptions = radioSelect.options.slice(0, 10);
   const options: SlackOptionObject[] = limitedOptions.map((opt) => {
@@ -317,7 +323,7 @@ function convertRadioSelectToElement(
   };
   if (radioSelect.initialOption) {
     const initialOpt = options.find(
-      (o) => o.value === radioSelect.initialOption,
+      (o) => o.value === radioSelect.initialOption
     );
     if (initialOpt) {
       element.initial_option = initialOpt;
@@ -342,7 +348,7 @@ export function convertFieldsToBlock(element: FieldsElement): SlackBlock {
     // Add label and value as separate field items
     fields.push({
       type: "mrkdwn",
-      text: `*${convertEmoji(field.label)}*\n${convertEmoji(field.value)}`,
+      text: `*${markdownToMrkdwn(convertEmoji(field.label))}*\n${markdownToMrkdwn(convertEmoji(field.value))}`,
     });
   }
 

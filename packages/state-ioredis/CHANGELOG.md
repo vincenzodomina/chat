@@ -1,5 +1,53 @@
 # @chat-adapter/state-ioredis
 
+## 4.14.0
+
+### Patch Changes
+
+- Updated dependencies [90dc325]
+  - chat@4.14.0
+
+## 4.13.4
+
+### Patch Changes
+
+- Updated dependencies [716ce2a]
+  - chat@4.13.4
+
+## 4.13.3
+
+### Patch Changes
+
+- Updated dependencies [ce33270]
+  - chat@4.13.3
+
+## 4.13.2
+
+### Patch Changes
+
+- Updated dependencies [7d00feb]
+  - chat@4.13.2
+
+## 4.13.1
+
+### Patch Changes
+
+- chat@4.13.1
+
+## 4.13.0
+
+### Patch Changes
+
+- Updated dependencies [f371c0d]
+  - chat@4.13.0
+
+## 4.12.0
+
+### Patch Changes
+
+- Updated dependencies [8c50252]
+  - chat@4.12.0
+
 ## 4.11.0
 
 ### Patch Changes

@@ -1,15 +1,109 @@
-import Image from "next/image";
+import type { CSSProperties } from "react";
+import { codeToTokens } from "shiki";
 import { cn } from "@/lib/utils";
 
-type TemplatesProps = {
-  title: string;
-  description: string;
+interface TemplatesProps {
   data: {
     title: string;
     description: string;
     link: string;
-    image: string;
+    code: string;
   }[];
+  description: string;
+  title: string;
+}
+
+const parseRootStyle = (rootStyle: string): Record<string, string> => {
+  const style: Record<string, string> = {};
+  for (const decl of rootStyle.split(";")) {
+    const idx = decl.indexOf(":");
+    if (idx > 0) {
+      const prop = decl.slice(0, idx).trim();
+      const val = decl.slice(idx + 1).trim();
+      if (prop && val) {
+        style[prop] = val;
+      }
+    }
+  }
+  return style;
+};
+
+const CodeBlock = async ({ code }: { code: string }) => {
+  const { tokens, rootStyle } = await codeToTokens(code, {
+    lang: "tsx",
+    themes: {
+      light: "github-light",
+      dark: "github-dark",
+    },
+    defaultColor: false,
+  });
+
+  const preStyle: Record<string, string> = {};
+
+  if (rootStyle) {
+    Object.assign(preStyle, parseRootStyle(rootStyle));
+  }
+
+  return (
+    <pre
+      className="overflow-hidden bg-background p-3 text-xs leading-relaxed"
+      style={
+        {
+          "--sdm-bg": "#fff",
+          ...preStyle,
+        } as CSSProperties
+      }
+    >
+      <code className="grid min-w-max">
+        {tokens.map((line, lineIndex) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static token array from shiki
+          <span className="line" key={lineIndex}>
+            {line.length > 0
+              ? line.map((token, tokenIndex) => {
+                  const tokenStyle: Record<string, string> = {};
+
+                  if (token.htmlStyle) {
+                    for (const [key, value] of Object.entries(
+                      token.htmlStyle
+                    )) {
+                      if (key === "color" || key === "--shiki-light") {
+                        tokenStyle["--sdm-c"] = value;
+                      } else if (
+                        key === "background-color" ||
+                        key === "--shiki-light-bg"
+                      ) {
+                        tokenStyle["--sdm-tbg"] = value;
+                      } else {
+                        tokenStyle[key] = value;
+                      }
+                    }
+                  }
+
+                  const hasBg = Boolean(tokenStyle["--sdm-tbg"]);
+
+                  return (
+                    <span
+                      className={cn(
+                        "text-[var(--sdm-c,inherit)]",
+                        "dark:text-[var(--shiki-dark,var(--sdm-c,inherit))]",
+                        hasBg && "bg-[var(--sdm-tbg)]",
+                        hasBg &&
+                          "dark:bg-[var(--shiki-dark-bg,var(--sdm-tbg))]"
+                      )}
+                      // biome-ignore lint/suspicious/noArrayIndexKey: static token array from shiki
+                      key={tokenIndex}
+                      style={tokenStyle as CSSProperties}
+                    >
+                      {token.content}
+                    </span>
+                  );
+                })
+              : "\n"}
+          </span>
+        ))}
+      </code>
+    </pre>
+  );
 };
 
 export const Templates = ({ title, description, data }: TemplatesProps) => (
@@ -33,16 +127,14 @@ export const Templates = ({ title, description, data }: TemplatesProps) => (
           <p className="line-clamp-2 text-muted-foreground text-sm">
             {item.description}
           </p>
-          <Image
-            alt={item.title}
+          <div
             className={cn(
-              "-rotate-3 -mb-12 mt-8 ml-7 aspect-video overflow-hidden rounded-md border object-cover object-top",
-              "group-hover:-rotate-1 transition-transform duration-300 group-hover:scale-105"
+              "mt-4 -mb-8 ml-4 -mr-8 -rotate-3 aspect-video overflow-hidden rounded-md border",
+              "transition-transform duration-300 group-hover:-rotate-1 group-hover:scale-105"
             )}
-            height={336}
-            src={item.image}
-            width={640}
-          />
+          >
+            <CodeBlock code={item.code} />
+          </div>
         </a>
       ))}
     </div>

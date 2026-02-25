@@ -22,6 +22,11 @@ import {
 } from "chat";
 import { buildAdapters } from "./adapters";
 
+const AI_MENTION_REGEX = /\bAI\b/i;
+const DISABLE_AI_REGEX = /disable\s*AI/i;
+const ENABLE_AI_REGEX = /enable\s*AI/i;
+const DM_ME_REGEX = /^dm\s*me$/i;
+
 const state = createRedisState({
   url: process.env.REDIS_URL || "",
   keyPrefix: "chat-sdk-webhooks",
@@ -43,7 +48,7 @@ export const bot = new Chat<typeof adapters, ThreadState>({
 
 // AI agent for AI mode
 const agent = new ToolLoopAgent({
-  model: "anthropic/claude-3.5-haiku",
+  model: "anthropic/claude-4.5-sonnet",
   instructions:
     "You are a helpful assistant in a chat thread. Answer the user's queries in a concise manner.",
 });
@@ -53,7 +58,7 @@ bot.onNewMention(async (thread, message) => {
   await thread.subscribe();
 
   // Check if user wants to enable AI mode (mention contains "AI")
-  if (/\bAI\b/i.test(message.text)) {
+  if (AI_MENTION_REGEX.test(message.text)) {
     await thread.setState({ aiMode: true });
     await thread.post(
       <Card title={`${emoji.sparkles} AI Mode Enabled`}>
@@ -67,10 +72,11 @@ bot.onNewMention(async (thread, message) => {
           <Field label="Platform" value={thread.adapter.name} />
           <Field label="Mode" value="AI Assistant" />
         </Fields>
-      </Card>,
+      </Card>
     );
 
     // Also respond to the initial message with AI
+    await thread.startTyping("Thinking...");
     const result = await agent.stream({ prompt: message.text });
     await thread.post(result.textStream);
     return;
@@ -80,8 +86,8 @@ bot.onNewMention(async (thread, message) => {
   await thread.startTyping();
   await thread.post(
     <Card
-      title={`${emoji.wave} Welcome!`}
       subtitle={`Connected via ${thread.adapter.name}`}
+      title={`${emoji.wave} Welcome!`}
     >
       <Text>I'm now listening to this thread. Try these actions:</Text>
       <Text>
@@ -116,7 +122,7 @@ bot.onNewMention(async (thread, message) => {
           Goodbye
         </Button>
       </Actions>
-    </Card>,
+    </Card>
   );
 });
 
@@ -134,7 +140,7 @@ bot.onAction("ephemeral", async (event) => {
         </Button>
       </Actions>
     </Card>,
-    { fallbackToDM: true },
+    { fallbackToDM: true }
   );
 });
 
@@ -142,16 +148,16 @@ bot.onAction("ephemeral_modal", async (event) => {
   await event.openModal(
     <Modal
       callbackId="ephemeral_modal_form"
-      title="Ephemeral Modal"
-      submitLabel="Submit"
       closeLabel="Cancel"
+      submitLabel="Submit"
+      title="Ephemeral Modal"
     >
       <TextInput
         id="response"
         label="Your Response"
         placeholder="Type something..."
       />
-    </Modal>,
+    </Modal>
   );
 });
 
@@ -160,7 +166,7 @@ bot.onModalSubmit("ephemeral_modal_form", async (event) => {
     <Card title={`${emoji.check} Submitted!`}>
       <Text>Your response: **{event.values.response}**</Text>
       <Text>The original ephemeral message was updated.</Text>
-    </Card>,
+    </Card>
   );
 });
 
@@ -170,50 +176,50 @@ bot.onAction("quick_action", async (event) => {
     await event.thread.post(`${emoji.wave} Hello, ${event.user.fullName}!`);
   } else if (action === "info") {
     await event.thread.post(
-      `${emoji.memo} You're on **${event.adapter.name}** in thread \`${event.threadId}\``,
+      `${emoji.memo} You're on **${event.adapter.name}** in thread \`${event.threadId}\``
     );
   } else if (action === "help") {
     await event.thread.post(
-      `${emoji.question} Try mentioning me with "AI" to enable AI assistant mode!`,
+      `${emoji.question} Try mentioning me with "AI" to enable AI assistant mode!`
     );
   }
 });
 
-bot.onAction("choose_plan", async (event) => {
+bot.onAction("choose_plan", (event) => {
   event.thread.post(
     <Card title="Choose Plan">
       <Actions>
         <RadioSelect id="plan_selected" label="Choose Plan">
           <SelectOption
+            description="Headers, body text, labels, and placeholders"
             label="*All text elements*"
             value="all_text"
-            description="Headers, body text, labels, and placeholders"
           />
           <SelectOption
+            description="Keep body text in the current system font"
             label="*Headers and titles only*"
             value="headers_titles"
-            description="Keep body text in the current system font"
           />
           <SelectOption
+            description="Only the composer textarea and its placeholder"
             label="*Input fields and placeholders*"
             value="input_fields"
-            description="Only the composer textarea and its placeholder"
           />
           <SelectOption
+            description="All text, but leave button labels unchanged"
             label="*Everything except buttons*"
             value="except_buttons"
-            description="All text, but leave button labels unchanged"
           />
         </RadioSelect>
       </Actions>
-    </Card>,
+    </Card>
   );
 });
-bot.onAction("plan_selected", async (event) => {
+bot.onAction("plan_selected", (event) => {
   event.thread.post(
     <Card title={`${emoji.check} Plan Chosen!`}>
       <Text>You chose plan *{event.value}*</Text>
-    </Card>,
+    </Card>
   );
 });
 
@@ -236,46 +242,59 @@ bot.onAction("info", async (event) => {
           value={threadState?.aiMode ? "Enabled" : "Disabled"}
         />
       </Fields>
-    </Card>,
+    </Card>
   );
 });
 
 bot.onAction("goodbye", async (event) => {
   await event.thread.post(
-    `${emoji.wave} Goodbye, ${event.user.fullName}! See you later.`,
+    `${emoji.wave} Goodbye, ${event.user.fullName}! See you later.`
   );
 });
 
+// Feedback modal component
+const FeedbackModal = (
+  <Modal
+    callbackId="feedback_form"
+    closeLabel="Cancel"
+    notifyOnClose
+    submitLabel="Send"
+    title="Send Feedback"
+  >
+    <TextInput
+      id="message"
+      label="Your Feedback"
+      multiline
+      placeholder="Tell us what you think..."
+    />
+    <Select id="category" label="Category" placeholder="Select a category">
+      <SelectOption label="Bug Report" value="bug" />
+      <SelectOption label="Feature Request" value="feature" />
+      <SelectOption label="General Feedback" value="general" />
+      <SelectOption label="Other" value="other" />
+    </Select>
+    <TextInput
+      id="email"
+      label="Email (optional)"
+      optional
+      placeholder="your@email.com"
+    />
+  </Modal>
+);
+
 // Open feedback modal
 bot.onAction("feedback", async (event) => {
-  await event.openModal(
-    <Modal
-      callbackId="feedback_form"
-      title="Send Feedback"
-      submitLabel="Send"
-      closeLabel="Cancel"
-      notifyOnClose
-    >
-      <TextInput
-        id="message"
-        label="Your Feedback"
-        placeholder="Tell us what you think..."
-        multiline
-      />
-      <Select id="category" label="Category" placeholder="Select a category">
-        <SelectOption label="Bug Report" value="bug" />
-        <SelectOption label="Feature Request" value="feature" />
-        <SelectOption label="General Feedback" value="general" />
-        <SelectOption label="Other" value="other" />
-      </Select>
-      <TextInput
-        id="email"
-        label="Email (optional)"
-        placeholder="your@email.com"
-        optional
-      />
-    </Modal>,
-  );
+  await event.openModal(FeedbackModal);
+});
+
+// Opens feedback modal via /feedback
+bot.onSlashCommand("/test-feedback", async (event) => {
+  const result = await event.openModal(FeedbackModal);
+  if (!result) {
+    await event.channel.post(
+      `${emoji.warning} Couldn't open the feedback modal. Please try again.`
+    );
+  }
 });
 
 // Open bug report modal with privateMetadata carrying context from button value
@@ -283,13 +302,13 @@ bot.onAction("report", async (event) => {
   await event.openModal(
     <Modal
       callbackId="report_form"
-      title="Report Bug"
-      submitLabel="Submit"
       privateMetadata={JSON.stringify({
         reportType: event.value,
         threadId: event.threadId,
         reporter: event.user.userId,
       })}
+      submitLabel="Submit"
+      title="Report Bug"
     >
       <TextInput
         id="title"
@@ -299,8 +318,8 @@ bot.onAction("report", async (event) => {
       <TextInput
         id="steps"
         label="Steps to Reproduce"
-        placeholder="1. Go to...\n2. Click on..."
         multiline
+        placeholder="1. Go to...\n2. Click on..."
       />
       <Select id="severity" label="Severity">
         <SelectOption label="Low" value="low" />
@@ -308,7 +327,7 @@ bot.onAction("report", async (event) => {
         <SelectOption label="High" value="high" />
         <SelectOption label="Critical" value="critical" />
       </Select>
-    </Modal>,
+    </Modal>
   );
 });
 
@@ -338,7 +357,7 @@ bot.onModalSubmit("report_form", async (event) => {
       </Fields>
       <Divider />
       <Text>{`**Steps to Reproduce:**\n${steps}`}</Text>
-    </Card>,
+    </Card>
   );
 });
 
@@ -362,7 +381,9 @@ bot.onModalSubmit("feedback_form", async (event) => {
     user: event.user.userName,
   });
   await event.relatedMessage?.edit(`${emoji.check} **Feedback received!**`);
-  await event.relatedThread?.post(
+  const target = event.relatedChannel || event.relatedThread;
+  await target?.postEphemeral(
+    event.user,
     <Card title={`${emoji.check} Feedback received!`}>
       <Text>Thank you for your feedback!</Text>
       <Fields>
@@ -372,11 +393,12 @@ bot.onModalSubmit("feedback_form", async (event) => {
         <Field label="Email" value={email} />
       </Fields>
     </Card>,
+    { fallbackToDM: false }
   );
 });
 
 // Handle modal close (cancel)
-bot.onModalClose("feedback_form", async (event) => {
+bot.onModalClose("feedback_form", (event) => {
   console.log(`${event.user.userName} cancelled the feedback form`);
 });
 
@@ -413,10 +435,10 @@ bot.onAction("messages", async (event) => {
     for await (const msg of thread.allMessages) {
       const displayText = getDisplayText(
         msg.text,
-        msg.attachments && msg.attachments.length > 0,
+        msg.attachments && msg.attachments.length > 0
       );
       allMessages.push(
-        `Msg ${count + 1}: ${msg.author.userName} - ${displayText}`,
+        `Msg ${count + 1}: ${msg.author.userName} - ${displayText}`
       );
       count++;
     }
@@ -428,7 +450,7 @@ bot.onAction("messages", async (event) => {
             .map((m, i) => {
               const displayText = getDisplayText(
                 m.text,
-                m.attachments && m.attachments.length > 0,
+                m.attachments && m.attachments.length > 0
               );
               return `Msg ${i + 1}: ${m.author.userName} - ${displayText}`;
             })
@@ -464,13 +486,13 @@ bot.onAction("messages", async (event) => {
               : "(no messages)"}
           </Text>
         </Section>
-      </Card>,
+      </Card>
     );
   } catch (err) {
     await thread.post(
       `${emoji.warning} Error fetching messages: ${
         err instanceof Error ? err.message : "Unknown error"
-      }`,
+      }`
     );
   }
 });
@@ -492,7 +514,9 @@ bot.onAction("channel-post", async (event) => {
         ? msg.text.slice(0, 50)
         : "[Card/Attachment]";
       recent.push(`- ${msg.author.userName}: ${preview}`);
-      if (recent.length >= 3) break;
+      if (recent.length >= 3) {
+        break;
+      }
     }
 
     const summary =
@@ -505,13 +529,13 @@ bot.onAction("channel-post", async (event) => {
           <Text>**Last 3 top-level messages:**</Text>
           <Text>{summary}</Text>
         </Section>
-      </Card>,
+      </Card>
     );
   } catch (err) {
     await thread.post(
       `${emoji.warning} Error reading channel: ${
         err instanceof Error ? err.message : "Unknown error"
-      }`,
+      }`
     );
   }
 });
@@ -533,25 +557,27 @@ bot.onNewMessage(/help/i, async (thread, message) => {
         <Text>{`${emoji.fire} React to my messages and I'll react back!`}</Text>
         <Text>{`${emoji.rocket} Active platforms: ${platforms}`}</Text>
       </Section>
-    </Card>,
+    </Card>
   );
 });
 
 // Handle messages in subscribed threads
 bot.onSubscribedMessage(async (thread, message) => {
-  if (!message.isMention) return;
+  if (!message.isMention) {
+    return;
+  }
   // Get thread state to check AI mode
   const threadState = await thread.state;
 
   // Check if user wants to disable AI mode
-  if (/disable\s*AI/i.test(message.text)) {
+  if (DISABLE_AI_REGEX.test(message.text)) {
     await thread.setState({ aiMode: false });
     await thread.post(`${emoji.check} AI mode disabled for this thread.`);
     return;
   }
 
   // Check if user wants to enable AI mode
-  if (/enable\s*AI/i.test(message.text)) {
+  if (ENABLE_AI_REGEX.test(message.text)) {
     await thread.setState({ aiMode: true });
     await thread.post(`${emoji.sparkles} AI mode enabled for this thread!`);
     return;
@@ -578,13 +604,14 @@ bot.onSubscribedMessage(async (thread, message) => {
         content: msg.text,
       }));
     console.log("history", history);
+    await thread.startTyping("Thinking...");
     const result = await agent.stream({ prompt: history });
     await thread.post(result.textStream);
     return;
   }
 
   // Check if user wants a DM
-  if (/^dm\s*me$/i.test(message.text.trim())) {
+  if (DM_ME_REGEX.test(message.text.trim())) {
     try {
       const dmThread = await bot.openDM(message.author);
       await dmThread.post(
@@ -592,14 +619,14 @@ bot.onSubscribedMessage(async (thread, message) => {
           <Text>{`Hi ${message.author.fullName}! You requested a DM from the thread.`}</Text>
           <Divider />
           <Text>This is a private conversation between us.</Text>
-        </Card>,
+        </Card>
       );
       await thread.post(`${emoji.check} I've sent you a DM!`);
     } catch (err) {
       await thread.post(
         `${emoji.warning} Sorry, I couldn't send you a DM. Error: ${
           err instanceof Error ? err.message : "Unknown error"
-        }`,
+        }`
       );
     }
     return;
@@ -610,7 +637,7 @@ bot.onSubscribedMessage(async (thread, message) => {
     const attachmentInfo = message.attachments
       .map(
         (a) =>
-          `- ${a.name || "unnamed"} (${a.type}, ${a.mimeType || "unknown"})`,
+          `- ${a.name || "unnamed"} (${a.type}, ${a.mimeType || "unknown"})`
       )
       .join("\n");
 
@@ -618,7 +645,7 @@ bot.onSubscribedMessage(async (thread, message) => {
       <Card title={`${emoji.eyes} Attachments Received`}>
         <Text>{`You sent ${message.attachments.length} file(s):`}</Text>
         <Text>{attachmentInfo}</Text>
-      </Card>,
+      </Card>
     );
     return;
   }
@@ -636,14 +663,16 @@ bot.onSubscribedMessage(async (thread, message) => {
 // Handle emoji reactions - respond with a matching emoji or message
 bot.onReaction(["thumbs_up", "heart", "fire", "rocket"], async (event) => {
   // Only respond to added reactions, not removed ones
-  if (!event.added) return;
+  if (!event.added) {
+    return;
+  }
 
   // GChat and Teams bots cannot add reactions via their APIs
   // Respond with a message instead
   if (event.adapter.name === "gchat" || event.adapter.name === "teams") {
     await event.adapter.postMessage(
       event.threadId,
-      `Thanks for the ${event.rawEmoji}!`,
+      `Thanks for the ${event.rawEmoji}!`
     );
     return;
   }
@@ -653,6 +682,6 @@ bot.onReaction(["thumbs_up", "heart", "fire", "rocket"], async (event) => {
   await event.adapter.addReaction(
     event.threadId,
     event.messageId,
-    emoji.raised_hands,
+    emoji.raised_hands
   );
 });

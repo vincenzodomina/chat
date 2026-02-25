@@ -466,7 +466,7 @@ describe("cardToBlockKit with radio select elements", () => {
 
   it("limits radio select options to 10", () => {
     const options = Array.from({ length: 15 }, (_, i) =>
-      SelectOption({ label: `Option ${i + 1}`, value: `opt${i + 1}` }),
+      SelectOption({ label: `Option ${i + 1}`, value: `opt${i + 1}` })
     );
     const card = Card({
       children: [
@@ -482,7 +482,7 @@ describe("cardToBlockKit with radio select elements", () => {
     const blocks = cardToBlockKit(card);
 
     const elements = blocks[0].elements as Array<{
-      options: Array<unknown>;
+      options: unknown[];
     }>;
     expect(elements[0].options).toHaveLength(10);
   });
@@ -597,5 +597,106 @@ describe("cardToBlockKit with select option descriptions", () => {
     }>;
     expect(elements[0].options[0].description).toBeUndefined();
     expect(elements[0].options[1].description).toBeUndefined();
+  });
+});
+
+describe("markdown bold to Slack mrkdwn conversion", () => {
+  it("converts **bold** to *bold* in CardText content", () => {
+    const card = Card({
+      children: [CardText("The **domain** is example.com")],
+    });
+    const blocks = cardToBlockKit(card);
+
+    expect(blocks[0]).toEqual({
+      type: "section",
+      text: { type: "mrkdwn", text: "The *domain* is example.com" },
+    });
+  });
+
+  it("converts multiple **bold** segments in one CardText", () => {
+    const card = Card({
+      children: [
+        CardText("**Project**: my-app, **Status**: active, **Branch**: main"),
+      ],
+    });
+    const blocks = cardToBlockKit(card);
+
+    expect(blocks[0].text.text).toBe(
+      "*Project*: my-app, *Status*: active, *Branch*: main"
+    );
+  });
+
+  it("converts **bold** across multiple lines", () => {
+    const card = Card({
+      children: [
+        CardText(
+          "**Domain**: example.com\n**Project**: my-app\n**Status**: deployed"
+        ),
+      ],
+    });
+    const blocks = cardToBlockKit(card);
+
+    expect(blocks[0].text.text).toBe(
+      "*Domain*: example.com\n*Project*: my-app\n*Status*: deployed"
+    );
+  });
+
+  it("preserves existing single *asterisk* formatting", () => {
+    const card = Card({
+      children: [CardText("Already *bold* in Slack format")],
+    });
+    const blocks = cardToBlockKit(card);
+
+    expect(blocks[0].text.text).toBe("Already *bold* in Slack format");
+  });
+
+  it("handles text with no markdown formatting", () => {
+    const card = Card({
+      children: [CardText("Plain text with no formatting")],
+    });
+    const blocks = cardToBlockKit(card);
+
+    expect(blocks[0].text.text).toBe("Plain text with no formatting");
+  });
+
+  it("converts **bold** in muted style CardText", () => {
+    const card = Card({
+      children: [CardText("Info about **thing**", { style: "muted" })],
+    });
+    const blocks = cardToBlockKit(card);
+
+    expect(blocks[0]).toEqual({
+      type: "context",
+      elements: [{ type: "mrkdwn", text: "Info about *thing*" }],
+    });
+  });
+
+  it("converts **bold** in field values", () => {
+    const card = Card({
+      children: [Fields([Field({ label: "Status", value: "**Active**" })])],
+    });
+    const blocks = cardToBlockKit(card);
+
+    expect(blocks[0].fields[0].text).toContain("*Active*");
+    expect(blocks[0].fields[0].text).not.toContain("**Active**");
+  });
+
+  it("does not convert empty double asterisks", () => {
+    const card = Card({
+      children: [CardText("text **** more")],
+    });
+    const blocks = cardToBlockKit(card);
+
+    // **** has nothing between them, regex requires .+ so no conversion
+    expect(blocks[0].text.text).toBe("text **** more");
+  });
+
+  it("handles **bold** at start and end of content", () => {
+    const card = Card({
+      children: [CardText("**Start** and **end**")],
+    });
+    const blocks = cardToBlockKit(card);
+
+    expect(blocks[0].text.text).toBe("*Start* and *end*");
   });
 });

@@ -4,14 +4,16 @@ import { Installer } from "@/components/geistdocs/installer";
 import { Button } from "@/components/ui/button";
 import { CenteredSection } from "./components/centered-section";
 import { CTA } from "./components/cta";
+import { Demo } from "./components/demo";
 import { Hero } from "./components/hero";
 import { OneTwoSection } from "./components/one-two-section";
 import { Templates } from "./components/templates";
 import { TextGridSection } from "./components/text-grid-section";
+import { Usage } from "./components/usage";
 
-const title = "Geistdocs";
+const title = "Chat SDK";
 const description =
-  "A Vercel documentation template built with Next.js and Fumadocs. Designed for spinning up documentation sites quickly and consistently.";
+  "A unified TypeScript SDK for building chat bots across Slack, Microsoft Teams, Google Chat, Discord, and more. Write your bot logic once, deploy everywhere.";
 
 export const metadata: Metadata = {
   title,
@@ -20,47 +22,80 @@ export const metadata: Metadata = {
 
 const templates = [
   {
-    title: "Template 1",
-    description: "Description of template 1",
-    link: "https://example.com/template-1",
-    image: "https://placehold.co/600x400.png",
+    title: "Slack bot with Next.js",
+    description: "Build a Slack bot from scratch using Chat SDK, Next.js, and Redis.",
+    link: "/docs/guides/slack-nextjs",
+    code: `const bot = new Chat({
+  userName: "my-bot",
+  adapters: {
+    slack: createSlackAdapter(),
+  },
+  state: createRedisState(),
+});`,
   },
   {
-    title: "Template 2",
-    description: "Description of template 2",
-    link: "https://example.com/template-2",
-    image: "https://placehold.co/600x400.png",
+    title: "Discord support bot with Nuxt",
+    description: "Build a Discord support bot using Chat SDK, Nuxt, and AI SDK.",
+    link: "/docs/guides/discord-nuxt",
+    code: `bot.onNewMention(async (thread) => {
+  await thread.subscribe();
+  await thread.post(
+    <Card title="Support">
+      <Text>Ask your question and
+        I'll do my best to answer.</Text>
+      <Actions>
+        <Button id="escalate">
+          Escalate to Human
+        </Button>
+      </Actions>
+    </Card>
+  );
+});`,
   },
   {
-    title: "Template 3",
-    description: "Description of template 3",
-    link: "https://example.com/template-3",
-    image: "https://placehold.co/600x400.png",
+    title: "Code review bot with Hono",
+    description: "Build a GitHub bot that reviews pull requests using AI SDK and Vercel Sandbox.",
+    link: "/docs/guides/code-review-hono",
+    code: `const sandbox = await Sandbox.create({
+  source: {
+    type: "git",
+    url: \`https://github.com/\${owner}/\${repo}\`,
+    username: "x-access-token",
+    password: process.env.GITHUB_TOKEN,
+  },
+});
+
+const { tools } = await createBashTool({
+  sandbox,
+});`,
   },
 ];
 
 const textGridSection = [
   {
     id: "1",
-    title: "Text Grid Section",
-    description: "Description of text grid section",
+    title: "Multi-platform",
+    description:
+      "Deploy to Slack, Teams, Google Chat, Discord, GitHub, and Linear from a single codebase.",
   },
   {
     id: "2",
-    title: "Text Grid Section",
-    description: "Description of text grid section",
+    title: "Type-safe",
+    description:
+      "Full TypeScript support with type-safe adapters, event handlers, and JSX cards.",
   },
   {
     id: "3",
-    title: "Text Grid Section",
-    description: "Description of text grid section",
+    title: "AI streaming",
+    description:
+      "First-class support for streaming LLM responses with native platform rendering.",
   },
 ];
 
 const HomePage = () => (
   <div className="container mx-auto max-w-5xl">
     <Hero
-      badge="Geistdocs is now in beta"
+      badge="Chat SDK is now open source and in beta"
       description={description}
       title={title}
     >
@@ -70,29 +105,33 @@ const HomePage = () => (
             Get Started
           </DynamicLink>
         </Button>
-        <Installer command="npx @vercel/geistdocs init" />
+        <Installer command="pnpm add chat" className="w-40 sm:w-32" />
       </div>
     </Hero>
     <div className="grid divide-y border-y sm:border-x">
-      <TextGridSection data={textGridSection} />
       <CenteredSection
-        description="Description of centered section"
-        title="Centered Section"
+        description="See how your handlers respond to real-time chat events across any platform."
+        title="Event-driven by design"
       >
-        <div className="aspect-video rounded-lg border bg-background" />
+        <Demo />
       </CenteredSection>
+      <TextGridSection data={textGridSection} />
       <OneTwoSection
-        description="Description of one/two section"
-        title="One/Two Section"
+        description="Install the SDK and pair it with your favorite chat providers and state management solutions."
+        title="Usage"
       >
-        <div className="aspect-video rounded-lg border bg-background" />
+        <Usage />
       </OneTwoSection>
       <Templates
         data={templates}
-        description="See Geistdocs in action with one of our templates."
-        title="Get started quickly"
+        description="Step-by-step guides to help you build common patterns with the Chat SDK."
+        title="Guides"
       />
-      <CTA cta="Get started" href="/docs" title="Start your docs today" />
+      <CTA
+        cta="Get started"
+        href="/docs/getting-started"
+        title="Ship your chatbot today"
+      />
     </div>
   </div>
 );

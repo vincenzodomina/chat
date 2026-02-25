@@ -16,7 +16,7 @@ Pass an AI SDK `textStream` directly to `thread.post()`:
 import { ToolLoopAgent } from "ai";
 
 const agent = new ToolLoopAgent({
-  model: "anthropic/claude-3.5-haiku",
+  model: "anthropic/claude-4.5-sonnet",
   instructions: "You are a helpful assistant.",
 });
 
@@ -55,6 +55,25 @@ The post+edit fallback throttles edits to avoid rate limits. Configure the updat
 const bot = new Chat({
   // ...
   streamingUpdateIntervalMs: 500, // Default: 500ms
+});
+```
+
+## Stop blocks (Slack only)
+
+When streaming in Slack, you can attach Block Kit elements to the final message using `stopBlocks`. This is useful for adding action buttons after a streamed response completes:
+
+```typescript title="lib/bot.ts" lineNumbers
+await thread.stream(textStream, {
+  stopBlocks: [
+    {
+      type: "actions",
+      elements: [{
+        type: "button",
+        text: { type: "plain_text", text: "Retry" },
+        action_id: "retry",
+      }],
+    },
+  ],
 });
 ```
 

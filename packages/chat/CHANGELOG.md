@@ -1,5 +1,50 @@
 # chat
 
+## 4.14.0
+
+### Minor Changes
+
+- 90dc325: Add typing indicators for Slack adapter using Slack assistants API
+
+## 4.13.4
+
+### Patch Changes
+
+- 716ce2a: Automatically create new ConsoleLogger
+
+## 4.13.3
+
+### Patch Changes
+
+- ce33270: Currently deserialized threads cannot post streams to Slack due to lost metadata
+
+## 4.13.2
+
+### Patch Changes
+
+- 7d00feb: Add docs to package
+
+## 4.13.1
+
+## 4.13.0
+
+### Minor Changes
+
+- f371c0d: feat(slack): full Slack Assistants API support
+
+  - Route `assistant_thread_started` and `assistant_thread_context_changed` events
+  - Add `onAssistantThreadStarted` and `onAssistantContextChanged` handler registration
+  - Add `setSuggestedPrompts`, `setAssistantStatus`, `setAssistantTitle` methods on Slack adapter
+  - Extend `stream()` to accept `stopBlocks` for Block Kit on stream finalization
+  - Bump `@slack/web-api` to `^7.11.0` for `chatStream` support
+  - Export all new types
+
+## 4.12.0
+
+### Minor Changes
+
+- 8c50252: Adding support for slash commands.
+
 ## 4.11.0
 
 ### Minor Changes

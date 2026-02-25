@@ -12,7 +12,7 @@ Building a chat bot that works across multiple platforms typically means maintai
 
 - **Single codebase** for all platforms
 - **Type-safe** adapters and event handlers with full TypeScript support
-- **Event-driven** architecture with handlers for mentions, messages, reactions, button clicks, and modals
+- **Event-driven** architecture with handlers for mentions, messages, reactions, button clicks, slash commands, and modals
 - **Thread subscriptions** for multi-turn conversations
 - **Rich UI** with JSX cards, buttons, and modals that render natively on each platform
 - **AI streaming** with first-class support for streaming LLM responses
@@ -34,12 +34,9 @@ import { createRedisState } from "@chat-adapter/state-redis";
 const bot = new Chat({
   userName: "mybot",
   adapters: {
-    slack: createSlackAdapter({
-      botToken: process.env.SLACK_BOT_TOKEN!,
-      signingSecret: process.env.SLACK_SIGNING_SECRET!,
-    }),
+    slack: createSlackAdapter(),
   },
-  state: createRedisState({ url: process.env.REDIS_URL! }),
+  state: createRedisState(),
 });
 
 bot.onNewMention(async (thread) => {
@@ -47,6 +44,8 @@ bot.onNewMention(async (thread) => {
   await thread.post("Hello! I'm listening to this thread.");
 });
 ```
+
+Each adapter factory auto-detects credentials from environment variables (`SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `REDIS_URL`, etc.), so you can get started with zero config. Pass explicit values to override.
 
 ## Supported platforms
 
@@ -58,6 +57,16 @@ bot.onNewMention(async (thread) => {
 | Discord | `@chat-adapter/discord` | Yes | Yes | Yes | No | Post+Edit | Yes |
 | GitHub | `@chat-adapter/github` | Yes | Yes | No | No | No | No |
 | Linear | `@chat-adapter/linear` | Yes | Yes | No | No | No | No |
+
+## AI coding agent support
+
+If you use an AI coding agent like [Claude Code](https://docs.anthropic.com/en/docs/claude-code), you can teach it about Chat SDK by installing the skill:
+
+```bash
+npx skills add vercel/chat
+```
+
+This gives your agent access to Chat SDK's documentation, patterns, and best practices so it can help you build bots more effectively.
 
 ## Packages
 

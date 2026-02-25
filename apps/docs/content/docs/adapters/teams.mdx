@@ -14,6 +14,8 @@ pnpm add @chat-adapter/teams
 
 ## Usage
 
+The adapter auto-detects `TEAMS_APP_ID`, `TEAMS_APP_PASSWORD`, and `TEAMS_APP_TENANT_ID` from environment variables:
+
 ```typescript title="lib/bot.ts" lineNumbers
 import { Chat } from "chat";
 import { createTeamsAdapter } from "@chat-adapter/teams";
@@ -22,10 +24,7 @@ const bot = new Chat({
   userName: "mybot",
   adapters: {
     teams: createTeamsAdapter({
-      appId: process.env.TEAMS_APP_ID!,
-      appPassword: process.env.TEAMS_APP_PASSWORD!,
       appType: "SingleTenant",
-      appTenantId: process.env.TEAMS_APP_TENANT_ID!,
     }),
   },
 });
@@ -136,12 +135,17 @@ Create icon files (32x32 `outline.png` and 192x192 `color.png`), then zip all th
 
 ## Configuration
 
+All options are auto-detected from environment variables when not provided.
+
 | Option | Required | Description |
 |--------|----------|-------------|
-| `appId` | Yes | Azure Bot App ID |
-| `appPassword` | Yes | Azure Bot App Password |
+| `appId` | No* | Azure Bot App ID. Auto-detected from `TEAMS_APP_ID` |
+| `appPassword` | No* | Azure Bot App Password. Auto-detected from `TEAMS_APP_PASSWORD` |
 | `appType` | No | `"MultiTenant"` or `"SingleTenant"` (default: `"MultiTenant"`) |
-| `appTenantId` | For SingleTenant | Azure AD Tenant ID |
+| `appTenantId` | For SingleTenant | Azure AD Tenant ID. Auto-detected from `TEAMS_APP_TENANT_ID` |
+| `logger` | No | Logger instance (defaults to `ConsoleLogger("info")`) |
+
+*`appId` and `appPassword` are required — either via config or env vars.
 
 ## Environment variables
 
@@ -168,8 +172,41 @@ TEAMS_APP_TENANT_ID=...  # Required for SingleTenant
 
 ## Limitations
 
-- **Adding reactions**: Teams Bot Framework doesn't support bots adding reactions
-- **Message history**: No API to fetch message history
+- **Adding reactions**: Teams Bot Framework doesn't support bots adding reactions. Calling `addReaction()` or `removeReaction()` throws a `NotImplementedError`. The bot can still receive reaction events via `onReaction()`.
+- **Typing indicators**: Not available via Bot Framework. `startTyping()` is a no-op.
+
+### Message history (`fetchMessages`)
+
+Fetching message history requires the Microsoft Graph API with client credentials flow. To enable it:
+
+1. Set `appTenantId` in the adapter config
+2. Grant one of these Azure AD app permissions:
+   - `ChatMessage.Read.Chat`
+   - `Chat.Read.All`
+   - `Chat.Read.WhereInstalled`
+
+Without these permissions, `fetchMessages` will not be able to retrieve channel history.
+
+### Receiving all messages
+
+By default, Teams bots only receive messages when directly @-mentioned. To receive all messages in a channel or group chat, add Resource-Specific Consent (RSC) permissions to your Teams app manifest:
+
+```json title="manifest.json"
+{
+  "authorization": {
+    "permissions": {
+      "resourceSpecific": [
+        {
+          "name": "ChannelMessage.Read.Group",
+          "type": "Application"
+        }
+      ]
+    }
+  }
+}
+```
+
+Alternatively, configure the bot in Azure to receive all messages.
 
 ## Troubleshooting
 
