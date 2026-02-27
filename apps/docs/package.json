@@ -10,7 +10,7 @@
     "translate": "npx @vercel/geistdocs translate"
   },
   "dependencies": {
-    "@ai-sdk/react": "^2.0.115",
+    "@ai-sdk/react": "^3.0.106",
     "@icons-pack/react-simple-icons": "^13.8.0",
     "@orama/tokenizers": "^3.1.16",
     "@streamdown/cjk": "^1.0.1",
