@@ -1,5 +1,12 @@
 # @chat-adapter/telegram
 
+## 4.15.1
+
+### Patch Changes
+
+- chat@4.15.1
+- @chat-adapter/shared@4.15.1
+
 ## 4.15.0
 
 ### Minor Changes

@@ -1,5 +1,13 @@
 # @chat-adapter/gchat
 
+## 4.15.1
+
+### Patch Changes
+
+- 32b17d9: refactor: replace broad googleapis dependency with specific packages
+  - chat@4.15.1
+  - @chat-adapter/shared@4.15.1
+
 ## 4.15.0
 
 ### Minor Changes
