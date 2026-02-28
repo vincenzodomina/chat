@@ -258,6 +258,28 @@ describe("ThreadImpl", () => {
       );
     });
 
+    it("should support disabling the placeholder for fallback streaming", async () => {
+      mockAdapter.stream = undefined;
+
+      const threadNoPlaceholder = new ThreadImpl({
+        id: "slack:C123:1234.5678",
+        adapter: mockAdapter,
+        channelId: "C123",
+        stateAdapter: mockState,
+        fallbackStreamingPlaceholderText: null,
+        fallbackStreamingMinInitialChars: 1,
+      });
+
+      const textStream = createTextStream(["H", "i"]);
+      await threadNoPlaceholder.post(textStream);
+
+      // Should NOT post the placeholder
+      expect(mockAdapter.postMessage).toHaveBeenCalledWith(
+        "slack:C123:1234.5678",
+        "Hi"
+      );
+    });
+
     it("should pass stream options from current message context", async () => {
       const mockStream = vi.fn().mockResolvedValue({
         id: "msg-stream",

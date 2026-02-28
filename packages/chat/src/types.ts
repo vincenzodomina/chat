@@ -53,6 +53,20 @@ export interface ChatConfig<
    * Defaults to 500ms. Lower values provide smoother updates but may hit rate limits.
    */
   streamingUpdateIntervalMs?: number;
+  /**
+   * Placeholder text for fallback streaming (post + edit) adapters.
+   * Defaults to `"..."`.
+   *
+   * Set to `null` to avoid posting an initial placeholder message and instead
+   * wait until some real text has been streamed before creating the message.
+   */
+  fallbackStreamingPlaceholderText?: string | null;
+  /**
+   * Minimum number of characters required before creating the first message when
+   * using fallback streaming and `fallbackStreamingPlaceholderText` is `null`.
+   * Defaults to `0` (create immediately).
+   */
+  fallbackStreamingMinInitialChars?: number;
   /** Default bot username across all adapters */
   userName: string;
 }

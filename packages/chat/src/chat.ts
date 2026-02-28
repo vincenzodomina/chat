@@ -180,6 +180,8 @@ export class Chat<
   private readonly userName: string;
   private readonly logger: Logger;
   private readonly _streamingUpdateIntervalMs: number;
+  private readonly _fallbackStreamingPlaceholderText: string | null;
+  private readonly _fallbackStreamingMinInitialChars: number;
   private readonly _dedupeTtlMs: number;
 
   private readonly mentionHandlers: MentionHandler<TState>[] = [];
@@ -213,6 +215,10 @@ export class Chat<
     this._stateAdapter = config.state;
     this.adapters = new Map();
     this._streamingUpdateIntervalMs = config.streamingUpdateIntervalMs ?? 500;
+    this._fallbackStreamingPlaceholderText =
+      config.fallbackStreamingPlaceholderText ?? "...";
+    this._fallbackStreamingMinInitialChars =
+      config.fallbackStreamingMinInitialChars ?? 0;
     this._dedupeTtlMs = config.dedupeTtlMs ?? DEDUPE_TTL_MS;
 
     // Initialize logger
@@ -1588,6 +1594,8 @@ export class Chat<
       isDM,
       currentMessage: initialMessage,
       streamingUpdateIntervalMs: this._streamingUpdateIntervalMs,
+      fallbackStreamingPlaceholderText: this._fallbackStreamingPlaceholderText,
+      fallbackStreamingMinInitialChars: this._fallbackStreamingMinInitialChars,
     });
   }
 
