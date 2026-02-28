@@ -54,7 +54,6 @@ interface ThreadImplConfigWithAdapter {
   stateAdapter: StateAdapter;
   streamingUpdateIntervalMs?: number;
   fallbackStreamingPlaceholderText?: string | null;
-  fallbackStreamingMinInitialChars?: number;
 }
 
 /**
@@ -71,7 +70,6 @@ interface ThreadImplConfigLazy {
   isSubscribedContext?: boolean;
   streamingUpdateIntervalMs?: number;
   fallbackStreamingPlaceholderText?: string | null;
-  fallbackStreamingMinInitialChars?: number;
 }
 
 type ThreadImplConfig = ThreadImplConfigWithAdapter | ThreadImplConfigLazy;
@@ -115,8 +113,6 @@ export class ThreadImpl<TState = Record<string, unknown>>
   private readonly _streamingUpdateIntervalMs: number;
   /** Placeholder text for fallback streaming (post + edit) */
   private readonly _fallbackStreamingPlaceholderText: string | null;
-  /** Minimum characters required before first post when placeholder is null */
-  private readonly _fallbackStreamingMinInitialChars: number;
   /** Cached channel instance */
   private _channel?: Channel<TState>;
 
@@ -128,9 +124,9 @@ export class ThreadImpl<TState = Record<string, unknown>>
     this._currentMessage = config.currentMessage;
     this._streamingUpdateIntervalMs = config.streamingUpdateIntervalMs ?? 500;
     this._fallbackStreamingPlaceholderText =
-      config.fallbackStreamingPlaceholderText ?? "...";
-    this._fallbackStreamingMinInitialChars =
-      config.fallbackStreamingMinInitialChars ?? 0;
+      config.fallbackStreamingPlaceholderText !== undefined
+        ? config.fallbackStreamingPlaceholderText
+        : "...";
 
     if (isLazyConfig(config)) {
       // Lazy resolution mode - store adapter name for later lookup
@@ -472,44 +468,30 @@ export class ThreadImpl<TState = Record<string, unknown>>
     const intervalMs =
       options?.updateIntervalMs ?? this._streamingUpdateIntervalMs;
     const placeholderText = this._fallbackStreamingPlaceholderText;
-    const minInitialChars = Math.max(0, this._fallbackStreamingMinInitialChars);
-
-    let msg:
-      | { id: string; threadId: string; raw: unknown }
-      | null = null;
+    let msg: { id: string; threadId: string; raw: unknown } | null =
+      placeholderText === null
+        ? null
+        : await this.adapter.postMessage(this.id, placeholderText);
     let threadIdForEdits = this.id;
-
     let accumulated = "";
-    let lastEditContent = ""; // Track content last applied to the message
+    let lastEditContent = "";
     let stopped = false;
     let pendingEdit: Promise<void> | null = null;
     let timerId: ReturnType<typeof setTimeout> | null = null;
 
-    const ensurePosted = async (initialContent: string): Promise<void> => {
-      if (msg) return;
-      const posted = await this.adapter.postMessage(this.id, initialContent);
-      msg = posted;
-      threadIdForEdits = posted.threadId || this.id;
-      lastEditContent = initialContent;
+    if (msg) {
+      threadIdForEdits = msg.threadId || this.id;
+      lastEditContent = placeholderText ?? "";
+    }
 
-      // Start the first timeout only after we have a message to edit.
+    const scheduleNextEdit = (): void => {
       timerId = setTimeout(() => {
         pendingEdit = doEditAndReschedule();
       }, intervalMs);
     };
 
     const doEditAndReschedule = async (): Promise<void> => {
-      if (stopped) {
-        return;
-      }
-
-      if (!msg) {
-        // Nothing to edit yet; try again later.
-        if (!stopped) {
-          timerId = setTimeout(() => {
-            pendingEdit = doEditAndReschedule();
-          }, intervalMs);
-        }
+      if (stopped || !msg) {
         return;
       }
 
@@ -525,24 +507,22 @@ export class ThreadImpl<TState = Record<string, unknown>>
 
       // Schedule next check after intervalMs (only after edit completes)
       if (!stopped) {
-        timerId = setTimeout(() => {
-          pendingEdit = doEditAndReschedule();
-        }, intervalMs);
+        scheduleNextEdit();
       }
     };
 
-    // Preserve existing behavior by default: post placeholder immediately.
-    if (placeholderText !== null && minInitialChars === 0) {
-      await ensurePosted(placeholderText);
+    if (msg) {
+      scheduleNextEdit();
     }
 
     try {
       for await (const chunk of textStream) {
         accumulated += chunk;
-
-        // If placeholder is disabled, wait until we have enough text to create the first message.
-        if (!msg && placeholderText === null && accumulated.length >= minInitialChars) {
-          await ensurePosted(accumulated);
+        if (!msg) {
+          msg = await this.adapter.postMessage(this.id, accumulated);
+          threadIdForEdits = msg.threadId || this.id;
+          lastEditContent = accumulated;
+          scheduleNextEdit();
         }
       }
     } finally {
@@ -558,20 +538,17 @@ export class ThreadImpl<TState = Record<string, unknown>>
       await pendingEdit;
     }
 
-    // If we never posted (e.g., placeholder disabled and stream too short/empty),
-    // create the message now with whatever we have.
     if (!msg) {
-      const finalInitial =
-        accumulated.length > 0 ? accumulated : (placeholderText ?? "...");
-      await ensurePosted(finalInitial);
+      msg = await this.adapter.postMessage(this.id, accumulated);
+      threadIdForEdits = msg.threadId || this.id;
+      lastEditContent = accumulated;
     }
 
-    // Final edit to ensure all content is shown (including empty stream replacing placeholder)
-    if (msg && accumulated !== lastEditContent) {
+    if (accumulated !== lastEditContent) {
       await this.adapter.editMessage(threadIdForEdits, msg.id, accumulated);
     }
 
-    return this.createSentMessage(msg!.id, accumulated, threadIdForEdits);
+    return this.createSentMessage(msg.id, accumulated, threadIdForEdits);
   }
 
   async refresh(): Promise<void> {

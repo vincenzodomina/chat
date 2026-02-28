@@ -58,20 +58,6 @@ const bot = new Chat({
 });
 ```
 
-## Disabling the initial placeholder ("...")
-
-On platforms that use the post+edit fallback (e.g. Telegram), Chat SDK posts an initial placeholder message (`"..."`) so it has something to edit as chunks arrive.
-
-If you prefer to **avoid posting the placeholder** (for example, to keep tool/debug messages ordered before the assistant reply), you can disable it and wait until some real text has streamed before creating the message:
-
-```typescript title="lib/bot.ts" lineNumbers
-const bot = new Chat({
-  // ...
-  fallbackStreamingPlaceholderText: null,
-  fallbackStreamingMinInitialChars: 24,
-});
-```
-
 ## Stop blocks (Slack only)
 
 When streaming in Slack, you can attach Block Kit elements to the final message using `stopBlocks`. This is useful for adding action buttons after a streamed response completes:

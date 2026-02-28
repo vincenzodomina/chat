@@ -267,15 +267,18 @@ describe("ThreadImpl", () => {
         channelId: "C123",
         stateAdapter: mockState,
         fallbackStreamingPlaceholderText: null,
-        fallbackStreamingMinInitialChars: 1,
       });
 
       const textStream = createTextStream(["H", "i"]);
       await threadNoPlaceholder.post(textStream);
 
-      // Should NOT post the placeholder
-      expect(mockAdapter.postMessage).toHaveBeenCalledWith(
+      expect(mockAdapter.postMessage).not.toHaveBeenCalledWith(
         "slack:C123:1234.5678",
+        "..."
+      );
+      expect(mockAdapter.editMessage).toHaveBeenLastCalledWith(
+        "slack:C123:1234.5678",
+        "msg-1",
         "Hi"
       );
     });

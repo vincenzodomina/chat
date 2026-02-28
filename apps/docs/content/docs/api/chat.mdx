@@ -45,16 +45,6 @@ const bot = new Chat(config);
       type: 'number',
       default: '500',
     },
-    fallbackStreamingPlaceholderText: {
-      description: 'Placeholder text used when fallback streaming (post + edit) starts. Set to null to avoid creating an initial placeholder message.',
-      type: 'string | null',
-      default: '"..."',
-    },
-    fallbackStreamingMinInitialChars: {
-      description: 'Minimum characters required before creating the first message when fallbackStreamingPlaceholderText is null.',
-      type: 'number',
-      default: '0',
-    },
   }}
 />
 
