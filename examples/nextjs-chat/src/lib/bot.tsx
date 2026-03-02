@@ -294,6 +294,12 @@ bot.onAction("feedback", async (event) => {
   await event.openModal(FeedbackModal);
 });
 
+bot.onSlashCommand("/ping", async (event) => {
+  await event.channel.post(
+    `Pong! Command invoked by ${event.user.fullName}${event.text ? `: ${event.text}` : ""}`
+  );
+});
+
 // Opens feedback modal via /feedback
 bot.onSlashCommand("/test-feedback", async (event) => {
   const result = await event.openModal(FeedbackModal);

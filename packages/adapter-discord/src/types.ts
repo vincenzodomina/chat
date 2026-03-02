@@ -38,6 +38,22 @@ export interface DiscordThreadId {
 }
 
 /**
+ * Per-request slash command context used while resolving deferred responses.
+ */
+export interface DiscordSlashCommandContext {
+  channelId: string;
+  initialResponseSent: boolean;
+  interactionToken: string;
+}
+
+/**
+ * Async request context for Discord webhook handling.
+ */
+export interface DiscordRequestContext {
+  slashCommand?: DiscordSlashCommandContext;
+}
+
+/**
  * Incoming Discord interaction from webhook.
  */
 export interface DiscordInteraction {

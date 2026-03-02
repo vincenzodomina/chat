@@ -4,7 +4,7 @@
 
 import { generateKeyPairSync, sign } from "node:crypto";
 import { ValidationError } from "@chat-adapter/shared";
-import type { Logger } from "chat";
+import type { ChatInstance, Logger } from "chat";
 import { InteractionType } from "discord-api-types/v10";
 import { describe, expect, it, vi } from "vitest";
 import { createDiscordAdapter, DiscordAdapter } from "./index";
@@ -405,6 +405,212 @@ describe("handleWebhook - APPLICATION_COMMAND", () => {
 
     const responseBody = await response.json();
     expect(responseBody).toEqual({ type: 5 }); // DeferredChannelMessageWithSource
+  });
+
+  it("dispatches slash command to chat core", async () => {
+    const processSlashCommand = vi.fn();
+    await adapter.initialize({
+      processSlashCommand,
+    } as unknown as ChatInstance);
+
+    const body = JSON.stringify({
+      type: InteractionType.ApplicationCommand,
+      id: "interaction123",
+      application_id: "test-app-id",
+      token: "interaction-token",
+      version: 1,
+      guild_id: "guild123",
+      channel_id: "channel456",
+      member: {
+        user: {
+          id: "user789",
+          username: "testuser",
+          discriminator: "0001",
+          global_name: "Test User",
+        },
+        roles: [],
+        joined_at: "2021-01-01T00:00:00.000Z",
+      },
+      data: {
+        name: "test",
+        type: 1,
+        options: [
+          {
+            name: "topic",
+            type: 3,
+            value: "status",
+          },
+          {
+            name: "verbose",
+            type: 5,
+            value: true,
+          },
+        ],
+      },
+    });
+    const request = createWebhookRequest(body);
+
+    const response = await adapter.handleWebhook(request);
+    expect(response.status).toBe(200);
+
+    expect(processSlashCommand).toHaveBeenCalledTimes(1);
+    expect(processSlashCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: "/test",
+        text: "status true",
+        channelId: "discord:guild123:channel456",
+        user: {
+          userId: "user789",
+          userName: "testuser",
+          fullName: "Test User",
+          isBot: false,
+          isMe: false,
+        },
+      }),
+      undefined
+    );
+  });
+
+  it("expands subcommand path into event.command", async () => {
+    const processSlashCommand = vi.fn();
+    await adapter.initialize({
+      processSlashCommand,
+    } as unknown as ChatInstance);
+
+    const body = JSON.stringify({
+      type: InteractionType.ApplicationCommand,
+      id: "interaction123",
+      application_id: "test-app-id",
+      token: "interaction-token",
+      version: 1,
+      guild_id: "guild123",
+      channel_id: "channel456",
+      member: {
+        user: {
+          id: "user789",
+          username: "testuser",
+          discriminator: "0001",
+          global_name: "Test User",
+        },
+        roles: [],
+        joined_at: "2021-01-01T00:00:00.000Z",
+      },
+      data: {
+        name: "project",
+        type: 1,
+        options: [
+          {
+            name: "issue",
+            type: 2, // SUB_COMMAND_GROUP
+            options: [
+              {
+                name: "create",
+                type: 1, // SUB_COMMAND
+                options: [
+                  { name: "title", type: 3, value: "Login fails" },
+                  { name: "priority", type: 3, value: "high" },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const request = createWebhookRequest(body);
+
+    const response = await adapter.handleWebhook(request);
+    expect(response.status).toBe(200);
+
+    expect(processSlashCommand).toHaveBeenCalledTimes(1);
+    expect(processSlashCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: "/project issue create",
+        text: "Login fails high",
+      }),
+      undefined
+    );
+  });
+
+  it("resolves deferred slash responses via interaction webhook", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "msg123",
+          channel_id: "channel456",
+          content: "Pong!",
+          timestamp: "2021-01-01T00:00:00.000Z",
+          edited_timestamp: null,
+          tts: false,
+          mention_everyone: false,
+          mentions: [],
+          mention_roles: [],
+          attachments: [],
+          embeds: [],
+          pinned: false,
+          type: 0,
+          author: {
+            id: "test-app-id",
+            username: "bot",
+            discriminator: "0000",
+            bot: true,
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      )
+    );
+
+    try {
+      let replyTask: Promise<unknown> | undefined;
+
+      await adapter.initialize({
+        processSlashCommand: (event: { channelId: string }) => {
+          replyTask = adapter.postChannelMessage(event.channelId, "Pong!");
+        },
+      } as unknown as ChatInstance);
+
+      const body = JSON.stringify({
+        type: InteractionType.ApplicationCommand,
+        id: "interaction123",
+        application_id: "test-app-id",
+        token: "interaction-token",
+        version: 1,
+        guild_id: "guild123",
+        channel_id: "channel456",
+        member: {
+          user: {
+            id: "user789",
+            username: "testuser",
+            discriminator: "0001",
+          },
+          roles: [],
+          joined_at: "2021-01-01T00:00:00.000Z",
+        },
+        data: {
+          id: "cmd123",
+          name: "test",
+          type: 1,
+        },
+      });
+      const request = createWebhookRequest(body);
+
+      const response = await adapter.handleWebhook(request);
+      expect(response.status).toBe(200);
+
+      await replyTask;
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "https://discord.com/api/v10/webhooks/test-app-id/interaction-token/messages/@original",
+        expect.objectContaining({
+          method: "PATCH",
+        })
+      );
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });
 

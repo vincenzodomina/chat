@@ -5,6 +5,7 @@
  * serverless compatibility. Webhook signature verification uses Ed25519.
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import {
   extractCard,
   extractFiles,
@@ -59,6 +60,7 @@ import { DiscordFormatConverter } from "./markdown";
 import {
   type DiscordActionRow,
   type DiscordAdapterConfig,
+  type DiscordCommandOption,
   type DiscordForwardedEvent,
   type DiscordGatewayEventType,
   type DiscordGatewayMessageData,
@@ -66,6 +68,8 @@ import {
   type DiscordInteraction,
   type DiscordInteractionResponse,
   type DiscordMessagePayload,
+  type DiscordRequestContext,
+  type DiscordSlashCommandContext,
   type DiscordThreadId,
   InteractionResponseType,
 } from "./types";
@@ -87,6 +91,8 @@ export class DiscordAdapter implements Adapter<DiscordThreadId, unknown> {
   private chat: ChatInstance | null = null;
   private readonly logger: Logger;
   private readonly formatConverter = new DiscordFormatConverter();
+  private readonly requestContext =
+    new AsyncLocalStorage<DiscordRequestContext>();
 
   constructor(
     config: DiscordAdapterConfig & { logger: Logger; userName?: string }
@@ -206,9 +212,9 @@ export class DiscordAdapter implements Adapter<DiscordThreadId, unknown> {
       });
     }
 
-    // Handle APPLICATION_COMMAND (slash commands - not implemented yet)
+    // Handle APPLICATION_COMMAND (slash commands)
     if (interaction.type === InteractionType.ApplicationCommand) {
-      // For now, just ACK
+      this.handleApplicationCommandInteraction(interaction, options);
       return this.respondToInteraction({
         type: InteractionResponseType.DeferredChannelMessageWithSource,
       });
@@ -364,6 +370,139 @@ export class DiscordAdapter implements Adapter<DiscordThreadId, unknown> {
     });
 
     this.chat.processAction(actionEvent, options);
+  }
+
+  /**
+   * Handle APPLICATION_COMMAND interactions (slash commands).
+   */
+  private handleApplicationCommandInteraction(
+    interaction: DiscordInteraction,
+    options?: WebhookOptions
+  ): void {
+    if (!this.chat) {
+      this.logger.warn("Chat instance not initialized, ignoring interaction");
+      return;
+    }
+
+    const commandName = interaction.data?.name;
+    if (!commandName) {
+      this.logger.warn("No command name in application command interaction");
+      return;
+    }
+
+    const user = interaction.member?.user || interaction.user;
+    if (!user) {
+      this.logger.warn("No user in application command interaction");
+      return;
+    }
+
+    const interactionChannelId = interaction.channel_id;
+    if (!interactionChannelId) {
+      this.logger.warn("Missing channel_id in application command interaction");
+      return;
+    }
+
+    const guildId = interaction.guild_id || "@me";
+    const channel = interaction.channel;
+    const isThread = channel?.type === 11 || channel?.type === 12;
+    const parentChannelId =
+      isThread && channel?.parent_id ? channel.parent_id : interactionChannelId;
+
+    const channelId = isThread
+      ? this.encodeThreadId({
+          guildId,
+          channelId: parentChannelId,
+          threadId: interactionChannelId,
+        })
+      : this.encodeThreadId({
+          guildId,
+          channelId: interactionChannelId,
+        });
+
+    const { command, text } = this.parseSlashCommand(
+      commandName,
+      interaction.data?.options
+    );
+
+    this.logger.debug("Processing Discord slash command", {
+      command,
+      text,
+      userId: user.id,
+      channelId,
+    });
+
+    // Keep interaction metadata in AsyncLocalStorage so event.channel.post(...)
+    // can resolve Discord's deferred "thinking..." response natively.
+    this.requestContext.run(
+      {
+        slashCommand: {
+          channelId,
+          interactionToken: interaction.token,
+          initialResponseSent: false,
+        },
+      },
+      () => {
+        this.chat?.processSlashCommand(
+          {
+            command,
+            text,
+            user: {
+              userId: user.id,
+              userName: user.username,
+              fullName: user.global_name || user.username,
+              isBot: user.bot ?? false,
+              isMe: user.id === this.applicationId,
+            },
+            adapter: this as Adapter,
+            raw: interaction,
+            channelId,
+          },
+          options
+        );
+      }
+    );
+  }
+
+  /**
+   * Parse a Discord slash command into a full command path and flat text.
+   *
+   * Subcommand and subcommand-group names are appended to the command path
+   * so `/project issue create --title="Login fails"` becomes:
+   *   command = "/project issue create"
+   *   text    = "Login fails"
+   *
+   * Leaf option values are flattened into `text`. Consumers needing the full
+   * option tree (names, types) can use `event.raw`.
+   */
+  private parseSlashCommand(
+    name: string,
+    options?: DiscordCommandOption[]
+  ): { command: string; text: string } {
+    const commandParts: string[] = [name.startsWith("/") ? name : `/${name}`];
+    const valueParts: string[] = [];
+
+    const collect = (items: DiscordCommandOption[]): void => {
+      for (const option of items) {
+        if (option.value !== undefined) {
+          valueParts.push(String(option.value));
+          continue;
+        }
+        // Subcommand or subcommand-group — append name to command path
+        if (option.options && option.options.length > 0) {
+          commandParts.push(option.name);
+          collect(option.options);
+        }
+      }
+    };
+
+    if (options && options.length > 0) {
+      collect(options);
+    }
+
+    return {
+      command: commandParts.join(" "),
+      text: valueParts.join(" ").trim(),
+    };
   }
 
   /**
@@ -629,6 +768,14 @@ export class DiscordAdapter implements Adapter<DiscordThreadId, unknown> {
 
     // Handle file uploads
     const files = extractFiles(message);
+    const slashResponse = this.tryPostSlashResponse(
+      actualThreadId,
+      payload,
+      files
+    );
+    if (slashResponse) {
+      return slashResponse;
+    }
     if (files.length > 0) {
       return this.postMessageWithFiles(
         channelId,
@@ -660,6 +807,75 @@ export class DiscordAdapter implements Adapter<DiscordThreadId, unknown> {
     return {
       id: result.id,
       threadId: actualThreadId,
+      raw: result,
+    };
+  }
+
+  private tryPostSlashResponse(
+    threadId: string,
+    payload: DiscordMessagePayload,
+    files: Array<{
+      filename: string;
+      data: Buffer | Blob | ArrayBuffer;
+      mimeType?: string;
+    }>
+  ): Promise<RawMessage<unknown>> | undefined {
+    const slashContext = this.requestContext.getStore()?.slashCommand;
+    if (!slashContext || slashContext.channelId !== threadId) {
+      return undefined;
+    }
+    return this.postSlashCommandResponse(
+      slashContext,
+      threadId,
+      payload,
+      files
+    );
+  }
+
+  private async postSlashCommandResponse(
+    slashContext: DiscordSlashCommandContext,
+    threadId: string,
+    payload: DiscordMessagePayload,
+    files: Array<{
+      filename: string;
+      data: Buffer | Blob | ArrayBuffer;
+      mimeType?: string;
+    }>
+  ): Promise<RawMessage<unknown>> {
+    const isInitialResponse = !slashContext.initialResponseSent;
+    // Set flag before awaiting to prevent concurrent post() calls from both
+    // trying to PATCH @original instead of the second being a followup POST.
+    slashContext.initialResponseSent = true;
+
+    const path = isInitialResponse
+      ? `/webhooks/${this.applicationId}/${slashContext.interactionToken}/messages/@original`
+      : `/webhooks/${this.applicationId}/${slashContext.interactionToken}?wait=true`;
+    const method = isInitialResponse ? "PATCH" : "POST";
+
+    this.logger.debug(
+      "Discord interaction webhook: responding to slash command",
+      {
+        threadId,
+        isInitialResponse,
+        hasFiles: files.length > 0,
+      }
+    );
+
+    const response =
+      files.length > 0
+        ? await this.discordInteractionFetchWithFiles(
+            path,
+            method,
+            payload,
+            files
+          )
+        : await this.discordInteractionFetch(path, method, payload);
+
+    const result = (await response.json()) as APIMessage;
+
+    return {
+      id: result.id,
+      threadId,
       raw: result,
     };
   }
@@ -771,6 +987,86 @@ export class DiscordAdapter implements Adapter<DiscordThreadId, unknown> {
       threadId,
       raw: result,
     };
+  }
+
+  private async discordInteractionFetch(
+    path: string,
+    method: string,
+    body?: unknown
+  ): Promise<Response> {
+    const response = await fetch(`${DISCORD_API_BASE}${path}`, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      this.logger.error("Discord interaction API error", {
+        path,
+        method,
+        status: response.status,
+        error: errorText,
+      });
+      throw new NetworkError(
+        "discord",
+        `Discord interaction API error: ${response.status} ${errorText}`
+      );
+    }
+
+    return response;
+  }
+
+  private async discordInteractionFetchWithFiles(
+    path: string,
+    method: string,
+    payload: DiscordMessagePayload,
+    files: Array<{
+      filename: string;
+      data: Buffer | Blob | ArrayBuffer;
+      mimeType?: string;
+    }>
+  ): Promise<Response> {
+    const formData = new FormData();
+    formData.append("payload_json", JSON.stringify(payload));
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!file) {
+        continue;
+      }
+      const buffer = await toBuffer(file.data, {
+        platform: "discord",
+      });
+      if (!buffer) {
+        continue;
+      }
+      const blob = new Blob([new Uint8Array(buffer)], {
+        type: file.mimeType || "application/octet-stream",
+      });
+      formData.append(`files[${i}]`, blob, file.filename);
+    }
+
+    const response = await fetch(`${DISCORD_API_BASE}${path}`, {
+      method,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      this.logger.error("Discord interaction API error", {
+        path,
+        method,
+        status: response.status,
+        error: errorText,
+      });
+      throw new NetworkError(
+        "discord",
+        `Discord interaction API error: ${response.status} ${errorText}`
+      );
+    }
+
+    return response;
   }
 
   /**
@@ -2017,6 +2313,10 @@ export class DiscordAdapter implements Adapter<DiscordThreadId, unknown> {
     }
 
     const files = extractFiles(message);
+    const slashResponse = this.tryPostSlashResponse(channelId, payload, files);
+    if (slashResponse) {
+      return slashResponse;
+    }
     if (files.length > 0) {
       return this.postMessageWithFiles(
         discordChannelId,

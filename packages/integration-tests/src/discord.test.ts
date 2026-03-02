@@ -205,6 +205,50 @@ describe("Discord Integration", () => {
       const body = await response.json();
       expect(body.type).toBe(5); // DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
     });
+
+    it("should dispatch slash command handlers", async () => {
+      const handlerMock = vi.fn();
+      chat.onSlashCommand("/help", async (event) => {
+        handlerMock(
+          event.command,
+          event.text,
+          event.user.userId,
+          event.channel.id
+        );
+        await event.channel.post("Slash command received!");
+      });
+
+      const payload = createDiscordInteraction({
+        type: InteractionType.ApplicationCommand,
+        commandName: "help",
+        guildId: TEST_GUILD,
+        channelId: TEST_CHANNEL,
+        userId: "USER789",
+      });
+
+      const request = createDiscordWebhookRequest(payload);
+      const response = await chat.webhooks.discord(request, {
+        waitUntil: tracker.waitUntil,
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.type).toBe(5); // DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
+
+      await tracker.waitForAll();
+
+      expect(handlerMock).toHaveBeenCalledWith(
+        "/help",
+        "",
+        "USER789",
+        TEST_THREAD_ID
+      );
+      expect(mockApi.interactions.editOriginal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: "Slash command received!",
+        })
+      );
+    });
   });
 
   describe("unknown interaction types", () => {
