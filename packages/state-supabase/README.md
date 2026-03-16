@@ -159,6 +159,28 @@ or, for a single namespace:
 select chat_state.chat_state_cleanup_expired('app-name-prod');
 ```
 
+## Integration tests (Testcontainers)
+
+The package includes integration tests that run the migration against a real Postgres instance in Docker and assert on schema, RPCs, and return shapes. They live in `src/index.test.ts` (gated by `RUN_INTEGRATION=1`) and require **Docker**; they are skipped when you run `pnpm test`.
+
+```bash
+# Unit tests only (default; integration block skipped)
+pnpm test
+
+# Integration tests (requires Docker; sets RUN_INTEGRATION=1)
+pnpm test:integration
+```
+
+Integration tests:
+
+- Start a Postgres 16 container via [testcontainers](https://github.com/testcontainers/testcontainers-node)
+- Create roles required by the migration (`service_role`, `anon`, `authenticated`)
+- Apply `sql/chat_state.sql`
+- Call each RPC with real SQL and assert on results (connect, subscribe, lock, cache, list, cleanup)
+- Run the adapter against a pg-backed fake Supabase client to verify the full path
+
+Use these to validate schema changes, grants, and jsonb behavior before releasing.
+
 ## Security notes
 
 - Prefer a service-role client for server-side bots and background workers.

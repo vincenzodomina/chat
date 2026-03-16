@@ -1,8 +1,17 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 import type { Lock, Logger } from "chat";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import pg from "pg";
+import { GenericContainer, Wait } from "testcontainers";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { createSupabaseState, SupabaseStateAdapter } = await import("./index");
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const KEY_PREFIX = "chat-sdk";
 
 const mockLogger: Logger = {
   child: () => mockLogger,
@@ -260,7 +269,7 @@ describe("SupabaseStateAdapter", () => {
         };
 
         const lock = await adapter.acquireLock("thread1", 5000);
-        expect(lock).not.toBeNull();
+        expect(lock !== null).toBe(true);
         expect(lock?.threadId).toBe("thread1");
         expect(lock?.token).toBe("sb_test-token");
       });
@@ -411,4 +420,301 @@ describe("SupabaseStateAdapter", () => {
       });
     });
   });
+
+  // Integration: real Postgres via Testcontainers. Run with pnpm test:integration (RUN_INTEGRATION=1).
+  describe.skipIf(!process.env.RUN_INTEGRATION)(
+    "integration (Testcontainers Postgres)",
+    { timeout: 120_000 },
+    () => {
+      let container: Awaited<ReturnType<GenericContainer["start"]>>;
+      let pool: pg.Pool;
+      let connectionString: string;
+
+      beforeAll(async () => {
+        const postgres = await new GenericContainer("postgres:16-alpine")
+          .withEnvironment({ POSTGRES_PASSWORD: "postgres" })
+          .withExposedPorts(5432)
+          .withWaitStrategy(
+            Wait.forLogMessage(/database system is ready to accept connections/, 2)
+          )
+          .withStartupTimeout(60_000)
+          .start();
+
+        container = postgres;
+        const host = postgres.getHost();
+        const port = postgres.getMappedPort(5432);
+        connectionString = `postgres://postgres:postgres@${host}:${port}/postgres`;
+
+        pool = new pg.Pool({ connectionString });
+
+        await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+          CREATE ROLE service_role;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+          CREATE ROLE anon;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+          CREATE ROLE authenticated;
+        END IF;
+      END $$;
+    `);
+
+        const sqlPath = path.join(__dirname, "..", "sql", "chat_state.sql");
+        const migrationSql = fs.readFileSync(sqlPath, "utf-8");
+        await postgres.copyContentToContainer([
+          { content: migrationSql, target: "/tmp/chat_state.sql" },
+        ]);
+        const exec = await postgres.exec([
+          "psql",
+          "-U",
+          "postgres",
+          "-d",
+          "postgres",
+          "-f",
+          "/tmp/chat_state.sql",
+        ]);
+        if (exec.exitCode !== 0) {
+          throw new Error(`Migration failed: exit ${exec.exitCode}\n${exec.output}`);
+        }
+      }, 90_000);
+
+      afterAll(async () => {
+        if (pool) await pool.end();
+        if (container) await container.stop();
+      });
+
+      describe("schema and RPC exposure", () => {
+        it("chat_state schema exists", async () => {
+          const { rows } = await pool.query(
+            "SELECT schema_name FROM information_schema.schemata WHERE schema_name = 'chat_state'"
+          );
+          expect(rows).toHaveLength(1);
+          expect(rows[0].schema_name).toBe("chat_state");
+        });
+
+        it("chat_state_connect returns true", async () => {
+          const { rows } = await pool.query(
+            "SELECT chat_state.chat_state_connect() AS result"
+          );
+          expect(rows).toHaveLength(1);
+          expect(rows[0].result).toBe(true);
+        });
+
+        it("chat_state_subscribe / is_subscribed / unsubscribe", async () => {
+          await pool.query("SELECT chat_state.chat_state_subscribe($1, $2)", [
+            KEY_PREFIX,
+            "thread-1",
+          ]);
+          const { rows: sub } = await pool.query(
+            "SELECT chat_state.chat_state_is_subscribed($1, $2) AS result",
+            [KEY_PREFIX, "thread-1"]
+          );
+          expect(sub[0].result).toBe(true);
+
+          await pool.query("SELECT chat_state.chat_state_unsubscribe($1, $2)", [
+            KEY_PREFIX,
+            "thread-1",
+          ]);
+          const { rows: unsub } = await pool.query(
+            "SELECT chat_state.chat_state_is_subscribed($1, $2) AS result",
+            [KEY_PREFIX, "thread-1"]
+          );
+          expect(unsub[0].result).toBe(false);
+        });
+
+        it("chat_state_acquire_lock returns lock shape and expires when held", async () => {
+          const token1 = "sb_test_" + Date.now();
+          const ttlMs = 30_000;
+          const { rows: r1 } = await pool.query(
+            "SELECT chat_state.chat_state_acquire_lock($1, $2, $3, $4) AS result",
+            [KEY_PREFIX, "thread-lock", token1, ttlMs]
+          );
+          expect(r1).toHaveLength(1);
+          const lock = r1[0].result as {
+            threadId: string;
+            token: string;
+            expiresAt: number;
+          } | null;
+          expect(lock !== null).toBe(true);
+          expect(lock!.threadId).toBe("thread-lock");
+          expect(lock!.token).toBe(token1);
+          expect(typeof lock!.expiresAt).toBe("number");
+          expect(lock!.expiresAt).toBeGreaterThan(Date.now());
+
+          const token2 = "sb_other_" + Date.now();
+          const { rows: r2 } = await pool.query(
+            "SELECT chat_state.chat_state_acquire_lock($1, $2, $3, $4) AS result",
+            [KEY_PREFIX, "thread-lock", token2, ttlMs]
+          );
+          expect(r2[0].result).toBeNull();
+
+          await pool.query(
+            "SELECT chat_state.chat_state_release_lock($1, $2, $3)",
+            [KEY_PREFIX, "thread-lock", token1]
+          );
+        });
+
+        it("chat_state_set / get / delete and jsonb roundtrip", async () => {
+          await pool.query(
+            "SELECT chat_state.chat_state_set($1, $2, $3, $4)",
+            [
+              KEY_PREFIX,
+              "cache-key-1",
+              JSON.stringify({ foo: "bar", n: 42 }),
+              60_000,
+            ]
+          );
+          const { rows: get } = await pool.query(
+            "SELECT chat_state.chat_state_get($1, $2) AS result",
+            [KEY_PREFIX, "cache-key-1"]
+          );
+          expect(get[0].result).toEqual({ foo: "bar", n: 42 });
+
+          await pool.query("SELECT chat_state.chat_state_delete($1, $2)", [
+            KEY_PREFIX,
+            "cache-key-1",
+          ]);
+          const { rows: miss } = await pool.query(
+            "SELECT chat_state.chat_state_get($1, $2) AS result",
+            [KEY_PREFIX, "cache-key-1"]
+          );
+          expect(miss[0].result).toBeNull();
+        });
+
+        it("chat_state_set_if_not_exists inserts only when missing or expired", async () => {
+          const { rows: first } = await pool.query(
+            "SELECT chat_state.chat_state_set_if_not_exists($1, $2, $3, $4) AS result",
+            [KEY_PREFIX, "dedupe-key", JSON.stringify(true), 10_000]
+          );
+          expect(first[0].result).toBe(true);
+
+          const { rows: second } = await pool.query(
+            "SELECT chat_state.chat_state_set_if_not_exists($1, $2, $3, $4) AS result",
+            [KEY_PREFIX, "dedupe-key", JSON.stringify(true), 10_000]
+          );
+          expect(second[0].result).toBe(false);
+        });
+
+        it("chat_state_append_to_list and get_list", async () => {
+          await pool.query(
+            "SELECT chat_state.chat_state_append_to_list($1, $2, $3, $4, $5)",
+            [KEY_PREFIX, "list-1", JSON.stringify({ id: 1 }), 10, 60_000]
+          );
+          await pool.query(
+            "SELECT chat_state.chat_state_append_to_list($1, $2, $3, $4, $5)",
+            [KEY_PREFIX, "list-1", JSON.stringify({ id: 2 }), 10, 60_000]
+          );
+          const { rows } = await pool.query(
+            "SELECT chat_state.chat_state_get_list($1, $2) AS result",
+            [KEY_PREFIX, "list-1"]
+          );
+          expect(rows[0].result).toEqual([{ id: 1 }, { id: 2 }]);
+        });
+
+        it("chat_state_cleanup_expired returns counts", async () => {
+          const { rows } = await pool.query(
+            "SELECT chat_state.chat_state_cleanup_expired() AS result"
+          );
+          const result = rows[0].result as {
+            cache: number;
+            lists: number;
+            locks: number;
+          };
+          expect(typeof result.cache).toBe("number");
+          expect(typeof result.lists).toBe("number");
+          expect(typeof result.locks).toBe("number");
+        });
+      });
+
+      describe("adapter against real Postgres", () => {
+        const RPC_PARAM_ORDER: Record<string, string[]> = {
+          chat_state_connect: [],
+          chat_state_subscribe: ["p_key_prefix", "p_thread_id"],
+          chat_state_unsubscribe: ["p_key_prefix", "p_thread_id"],
+          chat_state_is_subscribed: ["p_key_prefix", "p_thread_id"],
+          chat_state_acquire_lock: [
+            "p_key_prefix",
+            "p_thread_id",
+            "p_token",
+            "p_ttl_ms",
+          ],
+          chat_state_force_release_lock: ["p_key_prefix", "p_thread_id"],
+          chat_state_release_lock: [
+            "p_key_prefix",
+            "p_thread_id",
+            "p_token",
+          ],
+          chat_state_extend_lock: [
+            "p_key_prefix",
+            "p_thread_id",
+            "p_token",
+            "p_ttl_ms",
+          ],
+          chat_state_get: ["p_key_prefix", "p_cache_key"],
+          chat_state_set: [
+            "p_key_prefix",
+            "p_cache_key",
+            "p_value",
+            "p_ttl_ms",
+          ],
+          chat_state_set_if_not_exists: [
+            "p_key_prefix",
+            "p_cache_key",
+            "p_value",
+            "p_ttl_ms",
+          ],
+          chat_state_delete: ["p_key_prefix", "p_cache_key"],
+          chat_state_append_to_list: [
+            "p_key_prefix",
+            "p_list_key",
+            "p_value",
+            "p_max_length",
+            "p_ttl_ms",
+          ],
+          chat_state_get_list: ["p_key_prefix", "p_list_key"],
+          chat_state_cleanup_expired: ["p_key_prefix"],
+        };
+
+        it("adapter connect, subscribe, get, set with pg-backed fake client", async () => {
+          const poolForClient = new pg.Pool({ connectionString });
+
+          const fakeSupabase = {
+            schema: (_schemaName: string) => ({
+              rpc: async (fn: string, args: Record<string, unknown>) => {
+                const paramOrder = RPC_PARAM_ORDER[fn] ?? [];
+                const values = paramOrder.map((name) => args[name]);
+                const placeholders = values
+                  .map((_, i) => `$${i + 1}`)
+                  .join(", ");
+                const sql = `SELECT chat_state.${fn}(${placeholders}) AS result`;
+                const { rows } = await poolForClient.query(
+                  sql,
+                  values as unknown[]
+                );
+                const data = rows[0]?.result ?? null;
+                return { data, error: null };
+              },
+            }),
+          } as unknown as ReturnType<typeof createClient>;
+
+          const adapter = createSupabaseState({ client: fakeSupabase });
+          await adapter.connect();
+          await adapter.subscribe("integration-thread");
+          const subscribed = await adapter.isSubscribed("integration-thread");
+          expect(subscribed).toBe(true);
+
+          await adapter.set("integration-cache-key", { x: 1 }, 5000);
+          const value =
+            await adapter.get<{ x: number }>("integration-cache-key");
+          expect(value).toEqual({ x: 1 });
+
+          await adapter.disconnect();
+          await poolForClient.end();
+        });
+      });
+    }
+  );
 });
