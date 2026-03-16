@@ -369,7 +369,7 @@ begin
   insert into chat_state_lists (key_prefix, list_key, value, expires_at)
   values (p_key_prefix, p_list_key, p_value, v_expires_at);
 
-  if p_max_length is not null then
+  if p_max_length is not null and p_max_length > 0 then
     delete from chat_state_lists
     where key_prefix = p_key_prefix
       and list_key = p_list_key
@@ -379,7 +379,7 @@ begin
         where key_prefix = p_key_prefix
           and list_key = p_list_key
         order by seq desc
-        offset greatest(p_max_length, 0)
+        offset p_max_length
       );
   end if;
 

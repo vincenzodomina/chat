@@ -73,13 +73,12 @@ describe("SupabaseStateAdapter", () => {
       expect(adapter).toBeInstanceOf(SupabaseStateAdapter);
     });
 
-    it("should create an adapter with custom schema and keyPrefix", () => {
+    it("should create an adapter with custom keyPrefix", () => {
       const { client } = createMockSupabaseClient();
       const adapter = createSupabaseState({
         client,
         keyPrefix: "custom-prefix",
         logger: mockLogger,
-        schema: "custom_state",
       });
       expect(adapter).toBeInstanceOf(SupabaseStateAdapter);
     });
@@ -384,6 +383,14 @@ describe("SupabaseStateAdapter", () => {
         });
       });
 
+      it("should pass p_max_length null when maxLength is 0 or omitted (no trim)", async () => {
+        await adapter.appendToList("mylist", { x: 1 }, { maxLength: 0 });
+        expect(calls[0].args).toMatchObject({ p_max_length: null });
+
+        await adapter.appendToList("mylist", { x: 2 });
+        expect(calls[1].args).toMatchObject({ p_max_length: null });
+      });
+
       it("should return parsed list items from getList", async () => {
         response = { data: [{ id: 1 }, { id: 2 }], error: null };
         const result = await adapter.getList("mylist");
@@ -402,21 +409,6 @@ describe("SupabaseStateAdapter", () => {
         const client = adapter.getClient();
         expect(client).toBeDefined();
       });
-    });
-
-    it("should use a custom schema for RPC calls", async () => {
-      const mock = createMockSupabaseClient(() => ({ data: true, error: null }));
-      const customSchemaAdapter = new SupabaseStateAdapter({
-        client: mock.client,
-        logger: mockLogger,
-        schema: "bot_state",
-      });
-
-      await customSchemaAdapter.connect();
-      await customSchemaAdapter.subscribe("thread1");
-
-      expect(mock.calls[0]?.schema).toBe("bot_state");
-      expect(mock.calls[1]?.schema).toBe("bot_state");
     });
   });
 });

@@ -39,8 +39,6 @@ export interface CreateSupabaseStateOptions {
   keyPrefix?: string;
   /** Logger instance for error reporting */
   logger?: Logger;
-  /** Schema containing the state RPC functions (default: "chat_state") */
-  schema?: string;
 }
 
 export class SupabaseStateAdapter implements StateAdapter {
@@ -55,7 +53,7 @@ export class SupabaseStateAdapter implements StateAdapter {
     this.client = options.client;
     this.keyPrefix = options.keyPrefix || DEFAULT_KEY_PREFIX;
     this.logger = options.logger ?? new ConsoleLogger("info").child("supabase");
-    this.schemaName = options.schema || DEFAULT_SCHEMA;
+    this.schemaName = DEFAULT_SCHEMA;
   }
 
   async connect(): Promise<void> {
@@ -217,10 +215,15 @@ export class SupabaseStateAdapter implements StateAdapter {
   ): Promise<void> {
     this.ensureConnected();
 
+    const maxLength =
+      options?.maxLength != null && options.maxLength > 0
+        ? options.maxLength
+        : null;
+
     await this.callRpc<boolean>(RPC.appendToList, {
       p_key_prefix: this.keyPrefix,
       p_list_key: key,
-      p_max_length: options?.maxLength ?? null,
+      p_max_length: maxLength,
       p_ttl_ms: options?.ttlMs ?? null,
       p_value: value,
     });

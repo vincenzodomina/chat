@@ -55,17 +55,14 @@ const state = createSupabaseState({
 });
 ```
 
-### Custom schema and key prefix
+### Custom key prefix
 
 ```typescript
 const state = createSupabaseState({
   client: supabase,
-  schema: "bot_state",
   keyPrefix: "app-name-prod",
 });
 ```
-
-If you change the schema, replace `chat_state` throughout the provided SQL file and expose that schema in Supabase.
 
 ### Triggering cleanup from application code
 
@@ -87,7 +84,6 @@ cp node_modules/@chat-adapter/state-supabase/sql/chat_state.sql \
 | Option | Required | Description |
 |--------|----------|-------------|
 | `client` | Yes | Existing `SupabaseClient` instance |
-| `schema` | No | Schema containing the RPC functions (default: `"chat_state"`) |
 | `keyPrefix` | No | Prefix for all state rows (default: `"chat-sdk"`) |
 | `logger` | No | Logger instance (defaults to `ConsoleLogger("info").child("supabase")`) |
 
