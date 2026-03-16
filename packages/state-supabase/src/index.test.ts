@@ -1,17 +1,28 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { createClient } from "@supabase/supabase-js";
+import type { createClient, SupabaseClient } from "@supabase/supabase-js";
 import type { Lock, Logger } from "chat";
 import pg from "pg";
 import { GenericContainer, Wait } from "testcontainers";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 const { createSupabaseState, SupabaseStateAdapter } = await import("./index");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KEY_PREFIX = "chat-sdk";
+
+/** Postgres log message used by Testcontainers wait strategy. */
+const POSTGRES_READY_REGEX = /database system is ready to accept connections/;
 
 const mockLogger: Logger = {
   child: () => mockLogger,
@@ -22,8 +33,17 @@ const mockLogger: Logger = {
 };
 
 type RpcArgs = Record<string, unknown> | undefined;
-type RpcCall = { args?: RpcArgs; fn: string; schema: string };
-type RpcResponse = { data: unknown; error: Error | null };
+
+interface RpcCall {
+  args?: RpcArgs;
+  fn: string;
+  schema: string;
+}
+
+interface RpcResponse {
+  data: unknown;
+  error: Error | null;
+}
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -38,11 +58,15 @@ function createDeferred<T>() {
 }
 
 function createMockSupabaseClient(
-  handler?: (schemaName: string, fn: string, args?: RpcArgs) => RpcResponse | Promise<RpcResponse>
+  handler?: (
+    schemaName: string,
+    fn: string,
+    args?: RpcArgs
+  ) => RpcResponse | Promise<RpcResponse>
 ) {
   const calls: RpcCall[] = [];
   const resolvedHandler =
-    handler ?? (() => ({ data: null, error: null } satisfies RpcResponse));
+    handler ?? (() => ({ data: null, error: null }) satisfies RpcResponse);
 
   const schema = vi.fn().mockImplementation((schemaName: string) => ({
     rpc: vi.fn().mockImplementation((fn: string, args?: RpcArgs) => {
@@ -53,7 +77,7 @@ function createMockSupabaseClient(
 
   return {
     calls,
-    client: { schema } as unknown as SupabaseClient<any, any, any>,
+    client: { schema } as unknown as SupabaseClient<unknown, unknown, unknown>,
     schema,
   };
 }
@@ -119,7 +143,9 @@ describe("SupabaseStateAdapter", () => {
 
     it("should throw when calling subscribe before connect", async () => {
       const adapter = createUnconnectedAdapter();
-      await expect(adapter.subscribe("thread1")).rejects.toThrow("not connected");
+      await expect(adapter.subscribe("thread1")).rejects.toThrow(
+        "not connected"
+      );
     });
 
     it("should throw when calling acquireLock before connect", async () => {
@@ -274,10 +300,14 @@ describe("SupabaseStateAdapter", () => {
           logger: mockLogger,
         });
 
-        await expect(failingAdapter.connect()).rejects.toThrow("migration missing");
+        await expect(failingAdapter.connect()).rejects.toThrow(
+          "migration missing"
+        );
         expect(mockLogger.error).toHaveBeenCalled();
 
-        await expect(failingAdapter.connect()).rejects.toThrow("migration missing");
+        await expect(failingAdapter.connect()).rejects.toThrow(
+          "migration missing"
+        );
         expect(mock.calls).toHaveLength(2);
       });
 
@@ -550,7 +580,11 @@ describe("SupabaseStateAdapter", () => {
 
     describe("appendToList / getList", () => {
       it("should append to a list with the expected RPC arguments", async () => {
-        await adapter.appendToList("mylist", { foo: "bar" }, { maxLength: 10, ttlMs: 60000 });
+        await adapter.appendToList(
+          "mylist",
+          { foo: "bar" },
+          { maxLength: 10, ttlMs: 60000 }
+        );
         expect(calls[0]).toEqual({
           args: {
             p_key_prefix: "chat-sdk",
@@ -662,9 +696,7 @@ describe("SupabaseStateAdapter", () => {
         const postgres = await new GenericContainer("postgres:16-alpine")
           .withEnvironment({ POSTGRES_PASSWORD: "postgres" })
           .withExposedPorts(5432)
-          .withWaitStrategy(
-            Wait.forLogMessage(/database system is ready to accept connections/, 2)
-          )
+          .withWaitStrategy(Wait.forLogMessage(POSTGRES_READY_REGEX, 2))
           .withStartupTimeout(60_000)
           .start();
 
@@ -716,14 +748,19 @@ describe("SupabaseStateAdapter", () => {
         }
 
         // Ensure append_to_list was created (catches CREATE failures that would otherwise surface as "function does not exist").
-        const { rows: procs } = await pool.query<{ proname: string; args: string }>(`
+        const { rows: procs } = await pool.query<{
+          proname: string;
+          args: string;
+        }>(`
           SELECT p.proname, pg_get_function_identity_arguments(p.oid) AS args
           FROM pg_proc p
           JOIN pg_namespace n ON p.pronamespace = n.oid
           WHERE n.nspname = 'chat_state'
           ORDER BY p.proname
         `);
-        const appendFn = procs.find((r) => r.proname === "chat_state_append_to_list");
+        const appendFn = procs.find(
+          (r) => r.proname === "chat_state_append_to_list"
+        );
         if (!appendFn) {
           throw new Error(
             `chat_state_append_to_list not found after migration. Functions in chat_state: ${procs.map((p) => `${p.proname}(${p.args})`).join(", ")}`
@@ -732,8 +769,12 @@ describe("SupabaseStateAdapter", () => {
       }, 90_000);
 
       afterAll(async () => {
-        if (pool) await pool.end();
-        if (container) await container.stop();
+        if (pool) {
+          await pool.end();
+        }
+        if (container) {
+          await container.stop();
+        }
       });
 
       describe("schema and RPC exposure", () => {
@@ -776,7 +817,7 @@ describe("SupabaseStateAdapter", () => {
         });
 
         it("chat_state_acquire_lock returns lock shape and expires when held", async () => {
-          const token1 = "sb_test_" + Date.now();
+          const token1 = `sb_test_${Date.now()}`;
           const ttlMs = 30_000;
           const { rows: r1 } = await pool.query(
             "SELECT chat_state.chat_state_acquire_lock($1, $2, $3, $4) AS result",
@@ -789,12 +830,12 @@ describe("SupabaseStateAdapter", () => {
             expiresAt: number;
           } | null;
           expect(lock !== null).toBe(true);
-          expect(lock!.threadId).toBe("thread-lock");
-          expect(lock!.token).toBe(token1);
-          expect(typeof lock!.expiresAt).toBe("number");
-          expect(lock!.expiresAt).toBeGreaterThan(Date.now());
+          expect(lock?.threadId).toBe("thread-lock");
+          expect(lock?.token).toBe(token1);
+          expect(typeof lock?.expiresAt).toBe("number");
+          expect(lock?.expiresAt).toBeGreaterThan(Date.now());
 
-          const token2 = "sb_other_" + Date.now();
+          const token2 = `sb_other_${Date.now()}`;
           const { rows: r2 } = await pool.query(
             "SELECT chat_state.chat_state_acquire_lock($1, $2, $3, $4) AS result",
             [KEY_PREFIX, "thread-lock", token2, ttlMs]
@@ -808,15 +849,12 @@ describe("SupabaseStateAdapter", () => {
         });
 
         it("chat_state_set / get / delete and jsonb roundtrip", async () => {
-          await pool.query(
-            "SELECT chat_state.chat_state_set($1, $2, $3, $4)",
-            [
-              KEY_PREFIX,
-              "cache-key-1",
-              JSON.stringify({ foo: "bar", n: 42 }),
-              60_000,
-            ]
-          );
+          await pool.query("SELECT chat_state.chat_state_set($1, $2, $3, $4)", [
+            KEY_PREFIX,
+            "cache-key-1",
+            JSON.stringify({ foo: "bar", n: 42 }),
+            60_000,
+          ]);
           const { rows: get } = await pool.query(
             "SELECT chat_state.chat_state_get($1, $2) AS result",
             [KEY_PREFIX, "cache-key-1"]
@@ -892,11 +930,7 @@ describe("SupabaseStateAdapter", () => {
             "p_ttl_ms",
           ],
           chat_state_force_release_lock: ["p_key_prefix", "p_thread_id"],
-          chat_state_release_lock: [
-            "p_key_prefix",
-            "p_thread_id",
-            "p_token",
-          ],
+          chat_state_release_lock: ["p_key_prefix", "p_thread_id", "p_token"],
           chat_state_extend_lock: [
             "p_key_prefix",
             "p_thread_id",
@@ -957,8 +991,9 @@ describe("SupabaseStateAdapter", () => {
           expect(subscribed).toBe(true);
 
           await adapter.set("integration-cache-key", { x: 1 }, 5000);
-          const value =
-            await adapter.get<{ x: number }>("integration-cache-key");
+          const value = await adapter.get<{ x: number }>(
+            "integration-cache-key"
+          );
           expect(value).toEqual({ x: 1 });
 
           await adapter.disconnect();

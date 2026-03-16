@@ -23,7 +23,13 @@ const RPC = {
   unsubscribe: "chat_state_unsubscribe",
 } as const;
 
-type AnySupabaseClient = SupabaseClient<any, any, any>;
+/** Minimal Database shape required by SupabaseClient; index signature allows any schema name. */
+interface AnyDatabase {
+  PostgrestVersion: string;
+  [schema: string]: unknown;
+}
+
+type AnySupabaseClient = SupabaseClient<AnyDatabase, string, string>;
 type RpcArgs = Record<string, unknown>;
 
 /** Normalize TTL: treat undefined, null, or <= 0 as "no expiry" (null), matching memory/Redis adapters. */
@@ -283,7 +289,9 @@ function normalizeLock(lock: StoredLock | null): Lock | null {
   }
 
   const expiresAt =
-    typeof lock.expiresAt === "number" ? lock.expiresAt : Number(lock.expiresAt);
+    typeof lock.expiresAt === "number"
+      ? lock.expiresAt
+      : Number(lock.expiresAt);
 
   if (!Number.isFinite(expiresAt)) {
     return null;
