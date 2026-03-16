@@ -26,6 +26,14 @@ const RPC = {
 type AnySupabaseClient = SupabaseClient<any, any, any>;
 type RpcArgs = Record<string, unknown>;
 
+/** Normalize TTL: treat undefined, null, or <= 0 as "no expiry" (null), matching memory/Redis adapters. */
+function normalizeTtlMs(ttlMs?: number | null): number | null {
+  if (ttlMs == null || ttlMs <= 0 || !Number.isFinite(ttlMs)) {
+    return null;
+  }
+  return ttlMs;
+}
+
 interface StoredLock {
   expiresAt: number;
   threadId: string;
@@ -177,7 +185,7 @@ export class SupabaseStateAdapter implements StateAdapter {
     await this.callRpc<boolean>(RPC.set, {
       p_cache_key: key,
       p_key_prefix: this.keyPrefix,
-      p_ttl_ms: ttlMs ?? null,
+      p_ttl_ms: normalizeTtlMs(ttlMs),
       p_value: value,
     });
   }
@@ -192,7 +200,7 @@ export class SupabaseStateAdapter implements StateAdapter {
     const result = await this.callRpc<boolean>(RPC.setIfNotExists, {
       p_cache_key: key,
       p_key_prefix: this.keyPrefix,
-      p_ttl_ms: ttlMs ?? null,
+      p_ttl_ms: normalizeTtlMs(ttlMs),
       p_value: value,
     });
 
@@ -224,7 +232,7 @@ export class SupabaseStateAdapter implements StateAdapter {
       p_key_prefix: this.keyPrefix,
       p_list_key: key,
       p_max_length: maxLength,
-      p_ttl_ms: options?.ttlMs ?? null,
+      p_ttl_ms: normalizeTtlMs(options?.ttlMs),
       p_value: value,
     });
   }
